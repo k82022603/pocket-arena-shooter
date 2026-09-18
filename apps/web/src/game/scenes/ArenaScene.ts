@@ -8,7 +8,9 @@ import type { Outcome } from '../../sim/core';
 import { VirtualStick } from '../input/VirtualStick';
 import { Fx } from '../fx/Fx';
 import { LOOKS, drawFatima } from '../fx/Fatima';
+import { addPortraitCard } from '../fx/Portraits';
 import { sfx } from '../audio/Sfx';
+import type { CharacterId } from '../../sim/characters';
 import { FONT, makeButton } from '../ui';
 import type { GameSync, RenderState } from '../sync/GameSync';
 import { SoloSync } from '../sync/SoloSync';
@@ -50,6 +52,8 @@ export class ArenaScene extends Phaser.Scene {
   private hud!: Phaser.GameObjects.Text;
   private banner!: Phaser.GameObjects.Text;
   private waveText!: Phaser.GameObjects.Text;
+  private hudPortraits: [Phaser.GameObjects.Container | null, Phaser.GameObjects.Container | null] = [null, null];
+  private hudPortraitIds: [CharacterId | null, CharacterId | null] = [null, null];
   private reconnectShade!: Phaser.GameObjects.Rectangle;
   private reconnectText!: Phaser.GameObjects.Text;
   private ended = false;
@@ -139,7 +143,9 @@ export class ArenaScene extends Phaser.Scene {
     this.world.add(this.gfx);
     this.nameLabels = [this.makeNameLabel(), this.makeNameLabel()];
 
-    this.hud = this.add.text(12, 12, '', { fontFamily: FONT, fontSize: '18px', color: '#ffffff' }).setDepth(50);
+    this.hud = this.add.text(60, 12, '', { fontFamily: FONT, fontSize: '18px', color: '#ffffff' }).setDepth(50);
+    this.hudPortraits = [null, null];
+    this.hudPortraitIds = [null, null];
     this.banner = this.add
       .text(this.scale.width / 2, 58, '', { fontFamily: FONT, fontSize: '22px', color: '#ffe066' })
       .setOrigin(0.5, 0)
@@ -564,7 +570,23 @@ export class ArenaScene extends Phaser.Scene {
     }
   }
 
+  private renderHudPortraits(rs: RenderState): void {
+    for (const p of rs.players) {
+      const slot = p.id;
+      const wanted = p.id < rs.playerCount ? p.character : null;
+      if (this.hudPortraitIds[slot] !== wanted) {
+        this.hudPortraits[slot]?.destroy();
+        this.hudPortraits[slot] = wanted
+          ? addPortraitCard(this, wanted, 32, 34 + slot * 46, 40, 44, CHARACTERS[wanted].color, 2)?.setDepth(50) ?? null
+          : null;
+        this.hudPortraitIds[slot] = wanted;
+      }
+      this.hudPortraits[slot]?.setAlpha(p.hp > 0 ? 1 : 0.35);
+    }
+  }
+
   private renderHud(rs: RenderState): void {
+    this.renderHudPortraits(rs);
     const [p0, p1] = rs.players;
     const hp = (p: PlayerState) => `${CHARACTERS[p.character].name} ${p.hp}/${CHARACTERS[p.character].stats.maxHp}`;
     const players = rs.playerCount === 2 ? `${hp(p0)}   vs   ${hp(p1)}` : hp(p0);

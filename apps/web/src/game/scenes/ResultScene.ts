@@ -4,6 +4,7 @@ import { CHARACTERS } from '../../sim/characters';
 import type { MatchSummary, Outcome } from '../../sim/core';
 import { COOP, SIM, type PlayerStats } from '../../sim/types';
 import { sfx } from '../audio/Sfx';
+import { addPortraitCard } from '../fx/Portraits';
 import { applyResult } from '../record';
 import { FONT, makeButton, makeLabel } from '../ui';
 
@@ -77,12 +78,12 @@ export class ResultScene extends Phaser.Scene {
     if (data.note) subtitle = subtitle ? `${data.note}  ·  ${subtitle}` : data.note;
     const canRematch = !data.session || data.session.connected;
 
-    makeLabel(this, cx, height * 0.11, title, 44).setColor(
+    makeLabel(this, cx, height * 0.08, title, 40).setColor(
       outcome.mode === 'duel' ? (online && outcome.winner !== data.localId ? '#ff8a80' : '#ffe066') : outcome.won ? '#69f0ae' : '#ff8a80',
     );
-    if (subtitle) makeLabel(this, cx, height * 0.11 + 38, subtitle, 15);
+    if (subtitle) makeLabel(this, cx, height * 0.08 + 34, subtitle, 14);
 
-    if (summary) this.renderTable(summary, data.localId, height * 0.3);
+    if (summary) this.renderTable(summary, data.localId, height * 0.37);
 
     const record = applyResult(outcome, data.localId, online);
     const recordText =
@@ -112,12 +113,13 @@ export class ResultScene extends Phaser.Scene {
     const cols = players.length;
     const labelX = cx - 150;
     const colX = (i: number) => (cols === 1 ? cx + 60 : cx + 20 + i * 150);
-    const rowH = 26;
+    const rowH = 24;
 
     for (let i = 0; i < cols; i++) {
       const p = players[i]!;
       const c = CHARACTERS[p.character];
       const mine = i === localId;
+      addPortraitCard(this, p.character, colX(i), top - 44, 48, 56, c.color, 2);
       this.add
         .text(colX(i), top, `${c.name}${mine ? ' (나)' : ''}`, { fontFamily: FONT, fontSize: '17px', color: mine ? '#ffffff' : '#c9d1e3' })
         .setOrigin(0.5);

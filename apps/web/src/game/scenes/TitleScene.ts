@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { CHARACTERS, CHARACTER_ORDER, DEFAULT_CHARACTER, characterAt, characterIndex, type CharacterId } from '../../sim/characters';
 import type { GameMode } from '../../sim/types';
 import { LOOKS, drawFatima } from '../fx/Fatima';
+import { addPortraitCard } from '../fx/Portraits';
 import { sfx } from '../audio/Sfx';
 import { canInstall, isStandalone, onInstallAvailabilityChange, promptInstall } from '../../pwa';
 import { FONT, makeButton, makeLabel } from '../ui';
@@ -26,6 +27,11 @@ export class TitleScene extends Phaser.Scene {
   private charName!: Phaser.GameObjects.Text;
   private charRole!: Phaser.GameObjects.Text;
   private preview!: Phaser.GameObjects.Graphics;
+  private card: Phaser.GameObjects.Container | null = null;
+  private cardX = 0;
+  private cardY = 0;
+  private cardW = 0;
+  private cardH = 0;
   private previewX = 0;
   private previewY = 0;
   private modeButton!: Phaser.GameObjects.Text;
@@ -40,13 +46,17 @@ export class TitleScene extends Phaser.Scene {
     const { width, height } = this.scale;
     const cx = width / 2;
 
-    makeLabel(this, cx, height * 0.09, 'ARENA SHOOTER', 40);
-    makeLabel(this, cx, height * 0.09 + 36, '파티마와 함께, 옆 사람과 바로 붙는 2인 슈팅 (FSS 팬 게임)', 15);
+    makeLabel(this, cx, height * 0.08, 'ARENA SHOOTER', 36);
+    makeLabel(this, cx, height * 0.08 + 32, '파티마와 함께, 옆 사람과 바로 붙는 2인 슈팅 (FSS 팬 게임)', 14);
 
-    // 왼쪽: 파티마 미리보기 / 오른쪽: 선택과 메뉴
-    this.previewX = width * 0.27;
-    this.previewY = height * 0.62;
-    this.preview = this.add.graphics();
+    // 왼쪽: 원작 일러스트 카드 + 인게임 모습 / 오른쪽: 선택과 메뉴
+    this.cardW = Math.min(width * 0.36, height * 0.62);
+    this.cardH = height * 0.74;
+    this.cardX = width * 0.26;
+    this.cardY = height * 0.6;
+    this.previewX = this.cardX + this.cardW / 2 - 30;
+    this.previewY = this.cardY + this.cardH / 2 - 30;
+    this.preview = this.add.graphics().setDepth(5);
 
     const rx = width * 0.68;
     const pickY = height * 0.36;
@@ -70,12 +80,35 @@ export class TitleScene extends Phaser.Scene {
     this.muteButton = makeButton(this, width - 44, 30, '', () => this.toggleMute()).setFontSize(18);
     this.refreshMute();
 
-    this.installButton = makeButton(this, this.previewX, height * 0.93, '홈 화면에 설치', () => void this.install())
-      .setFontSize(16)
+    this.installButton = makeButton(this, width - 44, 76, '설치', () => void this.install())
+      .setFontSize(14)
       .setVisible(false);
     this.refreshInstall();
     const off = onInstallAvailabilityChange(() => this.refreshInstall());
     this.events.once('shutdown', off);
+  }
+
+  update(time: number): void {
+    const id = selectedCharacter(this);
+    const look = LOOKS[id];
+    const aim = -0.35 + Math.sin(time / 900) * 0.25;
+    const g = this.preview;
+    g.clear();
+    g.fillStyle(0x0b0f1a, 0.85);
+    g.fillCircle(this.previewX, this.previewY, 34);
+    g.lineStyle(2, CHARACTERS[id].color, 0.7);
+    g.strokeCircle(this.previewX, this.previewY, 34);
+    drawFatima(g, look, {
+      x: this.previewX,
+      y: this.previewY,
+      aim,
+      trailX: -0.9,
+      trailY: 0.35 + Math.sin(time / 1300) * 0.15,
+      time,
+      scale: 1.1,
+      alpha: 1,
+      flash: false,
+    });
   }
 
   private go(scene: string, data: object): void {
@@ -103,29 +136,6 @@ export class TitleScene extends Phaser.Scene {
     this.refreshInstall();
   }
 
-  update(time: number): void {
-    const id = selectedCharacter(this);
-    const look = LOOKS[id];
-    const aim = -0.35 + Math.sin(time / 900) * 0.25;
-    const g = this.preview;
-    g.clear();
-    g.fillStyle(CHARACTERS[id].color, 0.1);
-    g.fillCircle(this.previewX, this.previewY, 80);
-    g.lineStyle(2, CHARACTERS[id].color, 0.35);
-    g.strokeCircle(this.previewX, this.previewY, 80 + Math.sin(time / 500) * 3);
-    drawFatima(g, look, {
-      x: this.previewX,
-      y: this.previewY,
-      aim,
-      trailX: -0.9,
-      trailY: 0.35 + Math.sin(time / 1300) * 0.15,
-      time,
-      scale: 2.4,
-      alpha: 1,
-      flash: false,
-    });
-  }
-
   private cycle(delta: number): void {
     const next = characterAt(characterIndex(selectedCharacter(this)) + delta);
     this.registry.set(REGISTRY_CHARACTER, next);
@@ -147,5 +157,7 @@ export class TitleScene extends Phaser.Scene {
     const c = CHARACTERS[selectedCharacter(this)];
     this.charName.setText(c.name);
     this.charRole.setText(`${c.role}  ·  ${characterIndex(c.id) + 1}/${CHARACTER_ORDER.length}`);
+    this.card?.destroy();
+    this.card = addPortraitCard(this, c.id, this.cardX, this.cardY, this.cardW, this.cardH, c.color);
   }
 }

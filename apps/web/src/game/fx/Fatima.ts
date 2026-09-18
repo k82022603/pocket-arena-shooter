@@ -1,7 +1,8 @@
 import type Phaser from 'phaser';
 import type { CharacterId } from '../../sim/characters';
 
-export type Headdress = 'halo' | 'veil' | 'tiara' | 'ribbon';
+// gem: 이마의 푸른 보석(운명의 세 여신 공통), hood: 흑기사 시절 에스트의 오렌지 후드
+export type Headdress = 'gem' | 'hood';
 
 export interface FatimaLook {
   hair: number;
@@ -15,51 +16,51 @@ export interface FatimaLook {
   headdress: Headdress;
 }
 
-// 색·머리 모양은 게임 해석. 원작 일러스트를 복제하지 않고 실루엣 문법만 가져온다.
+// 원작 일러스트 기준: 세 자매는 흑발에 빨간 파티마 제복(흰 소매), 에스트는 갈색 머리·검은 슈트·오렌지 후드.
 export const LOOKS: Record<CharacterId, FatimaLook> = {
   lachesis: {
-    hair: 0xf2d16b,
-    hairHighlight: 0xfff3bf,
-    suit: 0x2b2f4a,
-    suitDark: 0x1a1d30,
-    accent: 0xf5c542,
-    skin: 0xf7dcc8,
-    hairLength: 42,
-    hairWidth: 22,
-    headdress: 'halo',
+    hair: 0x14121e,
+    hairHighlight: 0x3d3762,
+    suit: 0xd42a33,
+    suitDark: 0x7f1219,
+    accent: 0xf7f3ee,
+    skin: 0xf5dccb,
+    hairLength: 46,
+    hairWidth: 20,
+    headdress: 'gem',
   },
   clotho: {
-    hair: 0xdff6ff,
-    hairHighlight: 0xffffff,
-    suit: 0x1f3b5c,
-    suitDark: 0x122436,
-    accent: 0x7fd7ff,
-    skin: 0xf7dcc8,
-    hairLength: 48,
-    hairWidth: 16,
-    headdress: 'veil',
+    hair: 0x14121e,
+    hairHighlight: 0x3d3762,
+    suit: 0xcf2038,
+    suitDark: 0x7a1020,
+    accent: 0xf7f3ee,
+    skin: 0xf5dccb,
+    hairLength: 58,
+    hairWidth: 36,
+    headdress: 'gem',
   },
   atropos: {
-    hair: 0x3a2a55,
-    hairHighlight: 0x8a6fc0,
-    suit: 0x3d1f3a,
-    suitDark: 0x241222,
-    accent: 0xf472b6,
-    skin: 0xf3d5c4,
-    hairLength: 28,
-    hairWidth: 22,
-    headdress: 'tiara',
+    hair: 0x14121e,
+    hairHighlight: 0x3d3762,
+    suit: 0xe23a6e,
+    suitDark: 0x8a1d40,
+    accent: 0xf7f3ee,
+    skin: 0xf5dccb,
+    hairLength: 16,
+    hairWidth: 28,
+    headdress: 'gem',
   },
   est: {
-    hair: 0x1e1b2e,
-    hairHighlight: 0x4f4870,
-    suit: 0xff8c42,
-    suitDark: 0xb85a1f,
-    accent: 0xffd29d,
-    skin: 0xf7dcc8,
+    hair: 0x5b3a25,
+    hairHighlight: 0x8a5e3c,
+    suit: 0x1b1720,
+    suitDark: 0x0c0a10,
+    accent: 0xff8a1f,
+    skin: 0xf5dccb,
     hairLength: 34,
     hairWidth: 18,
-    headdress: 'ribbon',
+    headdress: 'hood',
   },
 };
 
@@ -103,9 +104,9 @@ export function drawFatima(g: Phaser.GameObjects.Graphics, look: FatimaLook, pos
   const hair: Pt[] = [
     along(2, -hw * 0.5),
     along(hl * 0.35, -hw * 0.6 + sway * 0.3),
-    along(hl * 0.7, -hw * 0.4 + sway * 0.7),
+    along(hl * 0.7, -hw * 0.45 + sway * 0.7),
     along(hl, sway),
-    along(hl * 0.7, hw * 0.4 + sway * 0.7),
+    along(hl * 0.7, hw * 0.45 + sway * 0.7),
     along(hl * 0.35, hw * 0.6 + sway * 0.3),
     along(2, hw * 0.5),
   ];
@@ -117,40 +118,34 @@ export function drawFatima(g: Phaser.GameObjects.Graphics, look: FatimaLook, pos
     true,
   );
 
-  if (look.headdress === 'veil') {
-    for (const side of [-1, 1]) {
-      const wob = Math.sin(pose.time / 120 + side) * 4;
-      g.fillStyle(color(look.accent), alpha * 0.85);
-      g.fillPoints(
-        [
-          along(0, side * 8),
-          along(hl * 0.6, side * (hw * 0.5 + 6) + wob),
-          along(hl * 1.15, side * (hw * 0.35 + 4) + wob * 1.5),
-          along(hl * 0.6, side * (hw * 0.5 + 2) + wob),
-        ],
-        true,
-      );
-    }
+  if (look.headdress === 'hood') {
+    // 후드: 머리 뒤를 감싸는 오렌지 덮개
+    g.fillStyle(color(look.accent), alpha);
+    g.fillPoints([at(2, -12), at(-9, -13), at(-14, -6), at(-14, 6), at(-9, 13), at(2, 12)], true);
   }
 
-  // 몸통(슈트) — 조준 방향을 향한 팔각 캡슐
-  const body: Pt[] = [at(11, 0), at(8, 7), at(0, 13), at(-8, 10), at(-11, 0), at(-8, -10), at(0, -13), at(8, -7)];
+  // 몸통(슈트) — 조준 방향을 향한 팔각 캡슐, 어깨는 각진 견장 느낌
+  const body: Pt[] = [at(11, 0), at(8, 7), at(1, 14), at(-8, 11), at(-11, 0), at(-8, -11), at(1, -14), at(8, -7)];
   g.fillStyle(color(look.suit), alpha);
   g.fillPoints(body, true);
   g.lineStyle(1.5 * s, color(look.suitDark), alpha);
   g.strokePoints(body, true, true);
-  g.fillStyle(color(look.accent), alpha * 0.9);
-  g.fillPoints([at(10, 0), at(4, 3), at(-8, 3), at(-8, -3), at(4, -3)], true);
+  // 흰 소매/어깨 라인
+  g.fillStyle(color(look.accent), alpha * 0.95);
+  g.fillPoints([at(3, 9), at(-4, 14), at(-8, 11), at(-3, 7)], true);
+  g.fillPoints([at(3, -9), at(-4, -14), at(-8, -11), at(-3, -7)], true);
+  g.fillStyle(color(look.suitDark), alpha * 0.9);
+  g.fillPoints([at(9, 0), at(3, 2.5), at(-8, 2.5), at(-8, -2.5), at(3, -2.5)], true);
 
   // 팔과 총
   const gunStart = at(3, 8);
   const gunEnd = at(27, 6);
   const shoulder = at(-2, 10);
-  g.lineStyle(4 * s, color(look.suitDark), alpha);
+  g.lineStyle(4 * s, color(look.accent), alpha);
   g.lineBetween(shoulder.x, shoulder.y, gunStart.x, gunStart.y);
   g.lineStyle(5 * s, flash ? 0xffffff : 0x2b2f3a, alpha);
   g.lineBetween(gunStart.x, gunStart.y, gunEnd.x, gunEnd.y);
-  g.lineStyle(2 * s, color(look.accent), alpha);
+  g.lineStyle(2 * s, color(look.hairHighlight), alpha);
   const tipA = at(22, 6);
   g.lineBetween(tipA.x, tipA.y, gunEnd.x, gunEnd.y);
 
@@ -165,39 +160,25 @@ export function drawFatima(g: Phaser.GameObjects.Graphics, look: FatimaLook, pos
   const hl2 = at(-1, -3);
   g.fillCircle(hl2.x, hl2.y, 3 * s);
 
-  switch (look.headdress) {
-    case 'halo': {
-      g.lineStyle(4 * s, color(look.accent), alpha * 0.25);
-      g.strokeCircle(crown.x, crown.y, 14 * s);
-      g.lineStyle(1.8 * s, color(look.accent), alpha * 0.95);
-      g.strokeCircle(crown.x, crown.y, 12.5 * s);
-      break;
-    }
-    case 'tiara': {
-      g.fillStyle(color(look.accent), alpha);
-      for (const side of [-5, 0, 5]) {
-        const b1 = at(6, side - 2);
-        const b2 = at(6, side + 2);
-        const tip = at(side === 0 ? 13 : 11, side);
-        g.fillTriangle(b1.x, b1.y, b2.x, b2.y, tip.x, tip.y);
-      }
-      break;
-    }
-    case 'ribbon': {
-      g.fillStyle(color(look.accent), alpha);
-      const knot = at(-7, 0);
-      for (const side of [-1, 1]) {
-        const a = at(-6, side * 3);
-        const b = at(-13, side * 9);
-        const c = at(-10, side * 2);
-        g.fillTriangle(a.x, a.y, b.x, b.y, c.x, c.y);
-      }
-      g.fillCircle(knot.x, knot.y, 2.2 * s);
-      break;
-    }
-    case 'veil':
-      g.lineStyle(1.5 * s, color(look.accent), alpha * 0.9);
-      g.strokeCircle(crown.x, crown.y, 9.5 * s);
-      break;
+  if (look.headdress === 'gem') {
+    const gem = at(8, 0);
+    g.fillStyle(0x4cc9f0, alpha * 0.35);
+    g.fillCircle(gem.x, gem.y, 4.5 * s);
+    g.fillStyle(flash ? 0xffffff : 0x7fe3ff, alpha);
+    const p1 = at(11, 0);
+    const p2 = at(8, 2.2);
+    const p3 = at(5.5, 0);
+    const p4 = at(8, -2.2);
+    g.fillPoints([p1, p2, p3, p4], true);
+  } else {
+    // 후드 앞자락과 흰 크라바트
+    g.fillStyle(color(look.accent), alpha);
+    g.fillPoints([at(2, 12), at(-4, 12), at(-4, -12), at(2, -12), at(6, -9), at(6, 9)], true);
+    g.fillStyle(color(look.skin), alpha);
+    g.fillCircle(face.x, face.y, 7 * s);
+    g.fillStyle(color(look.hair), alpha * 0.9);
+    g.fillCircle(crown.x, crown.y, 6.5 * s);
+    g.fillStyle(flash ? 0xffffff : 0xf7f3ee, alpha);
+    g.fillTriangle(at(9, -3).x, at(9, -3).y, at(9, 3).x, at(9, 3).y, at(14, 0).x, at(14, 0).y);
   }
 }
