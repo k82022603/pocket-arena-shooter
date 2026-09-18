@@ -4,6 +4,7 @@
 
 - 기획서: [docs/모바일_웹_슈팅게임_기획서.md](docs/모바일_웹_슈팅게임_기획서.md)
 - 캐릭터 설정: [docs/캐릭터_설정.md](docs/캐릭터_설정.md)
+- 원작 일러스트는 저작권 때문에 저장소에 포함하지 않습니다. 초상 카드를 보려면 [apps/web/public/fatima/README.md](apps/web/public/fatima/README.md)대로 이미지를 직접 넣어야 합니다 (없어도 게임은 동작)
 
 ## 구조
 

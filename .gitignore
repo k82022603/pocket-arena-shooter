@@ -1,5 +1,9 @@
 node_modules/
 dist/
+
+# 원작 일러스트는 저작권 문제로 저장소에 넣지 않는다 (로컬에만 보관)
+apps/web/public/fatima/*
+!apps/web/public/fatima/README.md
 .env
 .env.*.local
 *.local
