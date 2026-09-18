@@ -55,3 +55,130 @@ body {
     display: flex;
   }
 }
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(5, 8, 16, 0.85);
+  z-index: 20;
+  font: 16px system-ui, -apple-system, 'Noto Sans KR', sans-serif;
+  color: #e6ecff;
+  touch-action: auto;
+}
+
+.panel {
+  background: #131a2c;
+  border: 1px solid #2a3552;
+  border-radius: 14px;
+  padding: 22px 26px;
+  width: min(92vw, 360px);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.panel-title {
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.code-input {
+  font: 34px ui-monospace, Menlo, Consolas, monospace;
+  letter-spacing: 0.35em;
+  text-align: center;
+  padding: 10px 0 10px 0.35em;
+  border-radius: 10px;
+  border: 1px solid #3a4a72;
+  background: #0b0f1a;
+  color: #ffffff;
+  outline: none;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.code-input:focus {
+  border-color: #4cc9f0;
+}
+
+.panel-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.btn {
+  font: inherit;
+  font-size: 16px;
+  padding: 10px 18px;
+  border-radius: 10px;
+  border: none;
+  background: #4cc9f0;
+  color: #0b0f1a;
+  font-weight: 600;
+}
+
+.btn:disabled {
+  opacity: 0.4;
+}
+
+.btn.secondary {
+  background: #1f2a44;
+  color: #e6ecff;
+}
+
+.scanner {
+  position: absolute;
+  inset: 0;
+  background: #000;
+}
+
+.scanner video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.scan-frame {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: min(60vmin, 320px);
+  height: min(60vmin, 320px);
+  transform: translate(-50%, -50%);
+  border: 3px solid #4cc9f0;
+  border-radius: 18px;
+  box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0.45);
+}
+
+.scan-hint {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(50% + min(30vmin, 160px) + 16px);
+  text-align: center;
+  text-shadow: 0 1px 3px #000;
+}
+
+.scan-cancel {
+  position: absolute;
+  right: 16px;
+  top: calc(16px + env(safe-area-inset-top));
+}
+
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(24px + env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  background: #131a2c;
+  border: 1px solid #2a3552;
+  color: #e6ecff;
+  padding: 10px 16px;
+  border-radius: 10px;
+  font: 15px system-ui, -apple-system, 'Noto Sans KR', sans-serif;
+  z-index: 30;
+  pointer-events: none;
+}
