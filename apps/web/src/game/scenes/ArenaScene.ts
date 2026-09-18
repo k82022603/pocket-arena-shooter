@@ -465,8 +465,51 @@ export class ArenaScene extends Phaser.Scene {
       g.fillCircle(b.x, b.y, SIM.bulletRadius - 1);
     }
 
+    if (this.desktop.active) this.renderAimGuide(rs, now);
     this.fx.drawFront(g);
     this.renderHud(rs);
+  }
+
+  // PC 조작: 내 캐릭터에서 커서까지 점선 가이드와 커서 위치의 레티클을 그린다.
+  private renderAimGuide(rs: RenderState, now: number): void {
+    const me = rs.players[this.sync.localId];
+    if (me.hp <= 0) return;
+    const pointer = this.input.activePointer;
+    const mx = (pointer.x - this.baseX) / this.worldScale;
+    const my = (pointer.y - this.baseY) / this.worldScale;
+    const color = CHARACTERS[me.character].color;
+    const g = this.gfx;
+
+    const dx = mx - me.x;
+    const dy = my - me.y;
+    const dist = Math.hypot(dx, dy);
+    if (dist > SIM.playerRadius + 24) {
+      const ux = dx / dist;
+      const uy = dy / dist;
+      const start = SIM.playerRadius + 14;
+      const end = dist - 16;
+      g.lineStyle(1.5, color, 0.3);
+      for (let d = start; d < end; d += 22) {
+        const len = Math.min(12, end - d);
+        g.lineBetween(me.x + ux * d, me.y + uy * d, me.x + ux * (d + len), me.y + uy * (d + len));
+      }
+    }
+
+    const firing = pointer.leftButtonDown() && !pointer.wasTouch;
+    const r = (firing ? 13 : 10) + Math.sin(now / 120) * (firing ? 1.5 : 0.5);
+    g.lineStyle(2, color, 0.9);
+    g.strokeCircle(mx, my, r);
+    g.lineStyle(2, color, 0.9);
+    for (const [ax, ay] of [
+      [1, 0],
+      [-1, 0],
+      [0, 1],
+      [0, -1],
+    ] as const) {
+      g.lineBetween(mx + ax * (r + 3), my + ay * (r + 3), mx + ax * (r + 9), my + ay * (r + 9));
+    }
+    g.fillStyle(0xffffff, 0.9);
+    g.fillCircle(mx, my, 1.6);
   }
 
   private renderBackground(now: number): void {

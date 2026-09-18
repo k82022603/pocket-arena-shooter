@@ -38,7 +38,8 @@ export class DesktopControls {
   private enable(): void {
     if (this.active) return;
     this.active = true;
-    this.scene.input.setDefaultCursor('crosshair');
+    // 아레나가 자체 레티클을 그리므로 시스템 커서는 숨긴다
+    this.scene.input.setDefaultCursor('none');
     this.onChange(true);
   }
 
