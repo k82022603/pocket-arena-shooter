@@ -16,9 +16,9 @@ const fire: InputFrame = { ...EMPTY_INPUT, aimX: 1, aimY: 0, fire: true };
 const s = createInitialState(['lachesis', 'clotho'], { mode: 'duel', playerCount: 2, seed: 7 });
 s.pickups.push({ id: 99, kind: 1, x: s.players[0].x, y: s.players[0].y });
 step(s, [EMPTY_INPUT, EMPTY_INPUT]);
-check('산탄총 픽업 적용', s.players[0].weapon === 1 && s.players[0].weaponTicks === 600 && s.pickups.length === 0);
+check('스캐터 캐논 픽업 적용', s.players[0].weapon === 1 && s.players[0].weaponTicks === 600 && s.pickups.length === 0);
 step(s, [fire, EMPTY_INPUT]);
-check('산탄총 5발 발사', s.bullets.length === 5 && s.bullets.every((b) => b.kind === 1), `damage ${s.bullets[0]?.damage}`);
+check('스캐터 캐논 5발 발사', s.bullets.length === 5 && s.bullets.every((b) => b.kind === 1), `damage ${s.bullets[0]?.damage}`);
 
 // 레이저 관통
 const l = createInitialState(['atropos', 'est'], { mode: 'duel', playerCount: 2, seed: 7 });
@@ -32,7 +32,7 @@ for (let i = 0; i < 40; i++) {
   step(l, [EMPTY_INPUT, EMPTY_INPUT]);
   if (l.players[1].hp < 130 && l.bullets.length > 0) aliveAfterHit = true;
 }
-check('레이저 관통 (맞힌 뒤에도 계속 날아감)', aliveAfterHit && l.players[1].hp === 106, `est hp ${l.players[1].hp}`);
+check('레이저 랜스 관통 (맞힌 뒤에도 계속 날아감)', aliveAfterHit && l.players[1].hp === 106, `est hp ${l.players[1].hp}`);
 
 // 속도 부스트
 const bst = createInitialState(['clotho', 'est'], { mode: 'duel', playerCount: 2, seed: 7 });
@@ -58,7 +58,7 @@ lo.pickups.push({ id: 1, kind: 2, x: lo.players[0].x, y: lo.players[0].y });
 step(lo, [EMPTY_INPUT, EMPTY_INPUT]);
 const laserNow = lo.players[0].weapon === 2;
 for (let i = 0; i < 600; i++) step(lo, [EMPTY_INPUT, EMPTY_INPUT]);
-check('기관총 연사 간격 5틱', smgCooldown === 5, `cooldown ${smgCooldown}`);
+check('니들 스트림 연사 간격 5틱', smgCooldown === 5, `cooldown ${smgCooldown}`);
 check('픽업 종료 후 기본 무기 복귀', laserNow && lo.players[0].weapon === 3, `weapon ${lo.players[0].weapon}`);
 const chr = decodeCharacter(encodeCharacter('est', 5));
 check('캐릭터 패킷에 무기 포함', chr?.character === 'est' && chr.weapon === 5);

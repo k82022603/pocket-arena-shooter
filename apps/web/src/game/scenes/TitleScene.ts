@@ -179,14 +179,14 @@ export class TitleScene extends Phaser.Scene {
     const rx = this.scale.width * 0.68;
     const y = this.scale.height * 0.3 + 58;
     options.forEach((w, i) => {
-      const x = rx + (i - (options.length - 1) / 2) * 104;
+      const x = rx + (i - (options.length - 1) / 2) * 126;
       const btn = makeButton(this, x, y, WEAPONS[w].name, () => {
         setLoadout(this, id, w);
         sfx.ui();
         this.rebuildWeapons();
       })
-        .setFontSize(15)
-        .setPadding(14, 7, 14, 7);
+        .setFontSize(14)
+        .setPadding(10, 7, 10, 7);
       if (w === current) btn.setBackgroundColor('#4cc9f0').setColor('#0b0f1a');
       this.weaponButtons.push(btn);
     });
