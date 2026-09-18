@@ -1,7 +1,9 @@
 import { characterAt, characterIndex, type CharacterId } from '../../sim/characters';
 import { botInput, createBotMemory, type BotMemory } from '../../sim/bot';
-import { createInitialState, outcomeOf, step, summarize, type MatchSummary, type Outcome } from '../../sim/core';
+import { createInitialState, outcomeOf, setPlayerLoadout, step, summarize, type MatchSummary, type Outcome } from '../../sim/core';
+import { nextRandom } from '../../sim/prng';
 import { EMPTY_INPUT, type GameMode, type InputFrame, type SimState } from '../../sim/types';
+import { LOADOUTS, type WeaponKind } from '../../sim/weapons';
 import type { GameSync, RenderState } from './GameSync';
 
 export class SoloSync implements GameSync {
@@ -10,12 +12,17 @@ export class SoloSync implements GameSync {
   private readonly state: SimState;
   private readonly bot: BotMemory = createBotMemory();
 
-  constructor(local: CharacterId, mode: GameMode) {
-    this.state = createInitialState([local, characterAt(characterIndex(local) + 1)], {
+  constructor(local: CharacterId, mode: GameMode, weapon: WeaponKind) {
+    const foe = characterAt(characterIndex(local) + 1);
+    this.state = createInitialState([local, foe], {
       mode,
       playerCount: mode === 'coop' ? 1 : 2,
       seed: Date.now(),
     });
+    setPlayerLoadout(this.state, 0, weapon);
+    // 봇은 자기 파티마의 선택지 중 하나를 무작위로 든다
+    const options = LOADOUTS[foe];
+    setPlayerLoadout(this.state, 1, options[Math.floor(nextRandom(this.state) * options.length)]!);
   }
 
   step(local: InputFrame): void {

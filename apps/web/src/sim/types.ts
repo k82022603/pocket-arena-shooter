@@ -36,7 +36,9 @@ export interface PlayerState {
   // 협동 모드에서 다운된 뒤 아군이 곁에 머문 틱 수.
   reviveProgress: number;
   weapon: WeaponKind;
-  // 픽업 무기 남은 틱. 0이 되면 라이플로 돌아간다.
+  // 타이틀에서 고른 기본 무기. 픽업 무기가 끝나면 이것으로 돌아간다.
+  baseWeapon: WeaponKind;
+  // 픽업 무기 남은 틱.
   weaponTicks: number;
   boostTicks: number;
 }

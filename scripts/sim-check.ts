@@ -1,8 +1,8 @@
 // 화면 없이(헤드리스) 시뮬레이션 코어만 돌려 규칙을 확인한다: npm run check:sim
-import { createInitialState, step } from '../apps/web/src/sim/core';
+import { createInitialState, setPlayerLoadout, step } from '../apps/web/src/sim/core';
 import { botInput, createBotMemory } from '../apps/web/src/sim/bot';
 import { EMPTY_INPUT, type InputFrame } from '../apps/web/src/sim/types';
-import { decodeSnapshot, encodeSnapshot } from '../apps/web/src/sim/serialize';
+import { decodeCharacter, decodeSnapshot, encodeCharacter, encodeSnapshot } from '../apps/web/src/sim/serialize';
 
 let failures = 0;
 function check(name: string, ok: boolean, detail = ''): void {
@@ -48,6 +48,20 @@ for (let i = 0; i < 900; i++) step(sp, [EMPTY_INPUT, EMPTY_INPUT]);
 check('15초 후 픽업 스폰', sp.pickups.length === 1);
 const snap = decodeSnapshot(encodeSnapshot(sp, 42));
 check('스냅샷 왕복', !!snap && snap.state.pickups.length === 1 && snap.ackTick === 42);
+
+// 기본 무기: 기관총은 연사가 빠르고, 픽업이 끝나면 기본 무기로 돌아온다
+const lo = createInitialState(['lachesis', 'clotho'], { mode: 'duel', playerCount: 2, seed: 5 });
+setPlayerLoadout(lo, 0, 3);
+step(lo, [fire, EMPTY_INPUT]);
+const smgCooldown = lo.players[0].fireCooldown;
+lo.pickups.push({ id: 1, kind: 2, x: lo.players[0].x, y: lo.players[0].y });
+step(lo, [EMPTY_INPUT, EMPTY_INPUT]);
+const laserNow = lo.players[0].weapon === 2;
+for (let i = 0; i < 600; i++) step(lo, [EMPTY_INPUT, EMPTY_INPUT]);
+check('기관총 연사 간격 5틱', smgCooldown === 5, `cooldown ${smgCooldown}`);
+check('픽업 종료 후 기본 무기 복귀', laserNow && lo.players[0].weapon === 3, `weapon ${lo.players[0].weapon}`);
+const chr = decodeCharacter(encodeCharacter('est', 5));
+check('캐릭터 패킷에 무기 포함', chr?.character === 'est' && chr.weapon === 5);
 
 // 봇: 가만히 선 사람을 30초 안에 이기되 3초보다는 오래 걸려야 한다
 const b = createInitialState(['lachesis', 'clotho'], { mode: 'duel', playerCount: 2, seed: 11 });

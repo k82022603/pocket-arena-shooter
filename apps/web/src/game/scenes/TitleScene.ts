@@ -4,6 +4,8 @@ import type { GameMode } from '../../sim/types';
 import { LOOKS, drawFatima } from '../fx/Fatima';
 import { addPortraitCard } from '../fx/Portraits';
 import { sfx } from '../audio/Sfx';
+import { LOADOUTS, WEAPONS } from '../../sim/weapons';
+import { selectedLoadout, setLoadout } from '../loadout';
 import { canInstall, isStandalone, onInstallAvailabilityChange, promptInstall } from '../../pwa';
 import { FONT, makeButton, makeLabel } from '../ui';
 
@@ -35,6 +37,8 @@ export class TitleScene extends Phaser.Scene {
   private previewX = 0;
   private previewY = 0;
   private modeButton!: Phaser.GameObjects.Text;
+  private weaponButtons: Phaser.GameObjects.Text[] = [];
+  private weaponHint!: Phaser.GameObjects.Text;
   private muteButton!: Phaser.GameObjects.Text;
   private installButton!: Phaser.GameObjects.Text;
 
@@ -59,23 +63,24 @@ export class TitleScene extends Phaser.Scene {
     this.preview = this.add.graphics().setDepth(5);
 
     const rx = width * 0.68;
-    const pickY = height * 0.36;
+    const pickY = height * 0.3;
     this.charName = this.add
-      .text(rx, pickY, '', { fontFamily: FONT, fontSize: '30px', color: '#ffffff' })
+      .text(rx, pickY, '', { fontFamily: FONT, fontSize: '28px', color: '#ffffff' })
       .setOrigin(0.5);
-    this.charRole = makeLabel(this, rx, pickY + 30, '', 16);
+    this.charRole = makeLabel(this, rx, pickY + 28, '', 15);
     makeButton(this, rx - 150, pickY + 8, '◀', () => this.cycle(-1)).setFontSize(22);
     makeButton(this, rx + 150, pickY + 8, '▶', () => this.cycle(1)).setFontSize(22);
+    this.weaponHint = makeLabel(this, rx, pickY + 84, '', 12).setColor('#8fa3c8');
     this.refreshCharacter();
 
-    this.modeButton = makeButton(this, rx, height * 0.53, '', () => this.toggleMode()).setFontSize(18);
+    this.modeButton = makeButton(this, rx, height * 0.6, '', () => this.toggleMode()).setFontSize(17);
     this.refreshMode();
 
-    const btnY = height * 0.68;
-    const step = 56;
-    makeButton(this, rx, btnY, '혼자 하기', () => this.go('Arena', { mode: 'solo' })).setFontSize(24);
-    makeButton(this, rx, btnY + step, '방 만들기', () => this.go('Lobby', { role: 'host' })).setFontSize(24);
-    makeButton(this, rx, btnY + step * 2, '참가하기', () => this.go('Lobby', { role: 'guest' })).setFontSize(24);
+    const btnY = height * 0.74;
+    const step = 50;
+    makeButton(this, rx - 118, btnY, '혼자 하기', () => this.go('Arena', { mode: 'solo' })).setFontSize(20);
+    makeButton(this, rx, btnY + step, '방 만들기', () => this.go('Lobby', { role: 'host' })).setFontSize(20);
+    makeButton(this, rx + 118, btnY, '참가하기', () => this.go('Lobby', { role: 'guest' })).setFontSize(20);
 
     makeLabel(this, rx, height * 0.97, '터치: 왼쪽 드래그 이동 · 오른쪽 드래그 조준/발사   |   PC: WASD 이동 · 마우스 조준 · 클릭 발사 · Shift 대시', 11).setColor('#6f7fa3');
 
@@ -161,5 +166,30 @@ export class TitleScene extends Phaser.Scene {
     this.charRole.setText(`${c.role}  ·  ${characterIndex(c.id) + 1}/${CHARACTER_ORDER.length}`);
     this.card?.destroy();
     this.card = addPortraitCard(this, c.id, this.cardX, this.cardY, this.cardW, this.cardH, c.color);
+    this.rebuildWeapons();
+  }
+
+  // 파티마별 기본 무기 선택 줄. 고른 것은 강조하고 설명을 아래에 보여준다.
+  private rebuildWeapons(): void {
+    for (const b of this.weaponButtons) b.destroy();
+    this.weaponButtons = [];
+    const id = selectedCharacter(this);
+    const options = LOADOUTS[id];
+    const current = selectedLoadout(this, id);
+    const rx = this.scale.width * 0.68;
+    const y = this.scale.height * 0.3 + 58;
+    options.forEach((w, i) => {
+      const x = rx + (i - (options.length - 1) / 2) * 104;
+      const btn = makeButton(this, x, y, WEAPONS[w].name, () => {
+        setLoadout(this, id, w);
+        sfx.ui();
+        this.rebuildWeapons();
+      })
+        .setFontSize(15)
+        .setPadding(14, 7, 14, 7);
+      if (w === current) btn.setBackgroundColor('#4cc9f0').setColor('#0b0f1a');
+      this.weaponButtons.push(btn);
+    });
+    this.weaponHint.setText(`${WEAPONS[current].name}: ${WEAPONS[current].description}`);
   }
 }

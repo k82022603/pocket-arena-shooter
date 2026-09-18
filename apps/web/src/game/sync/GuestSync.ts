@@ -8,13 +8,14 @@ import {
   createInitialState,
   makeBullets,
   outcomeOf,
+  setPlayerLoadout,
   summarize,
   type MatchSummary,
   type Outcome,
 } from '../../sim/core';
 import { INPUT_REDUNDANCY, decodeSnapshot, encodeCharacter, encodeInput, type Snapshot } from '../../sim/serialize';
 import { ENEMIES, SIM, type BulletState, type EnemyState, type InputFrame, type PlayerState, type SimState } from '../../sim/types';
-import { WEAPONS } from '../../sim/weapons';
+import { WEAPONS, type WeaponKind } from '../../sim/weapons';
 import { INTERP_DELAY_TICKS, monotonicTick, type GameSync, type RenderState, type SyncLink } from './GameSync';
 
 const MAX_SNAPSHOTS = 32;
@@ -52,10 +53,12 @@ export class GuestSync implements GameSync {
   constructor(
     private readonly transport: SyncLink,
     private readonly local: CharacterId,
+    private readonly weapon: WeaponKind,
   ) {
     this.placeholder = createInitialState([local, local]);
+    setPlayerLoadout(this.placeholder, this.localId, weapon);
     this.predicted = { ...this.placeholder.players[this.localId] };
-    transport.send('event', encodeCharacter(local));
+    transport.send('event', encodeCharacter(local, weapon));
   }
 
   // 끊긴 동안의 스냅샷·입력은 버리고 호스트가 재전송하는 스냅샷부터 다시 맞춘다.
@@ -64,7 +67,7 @@ export class GuestSync implements GameSync {
     this.pending.length = 0;
     this.predictedBullets = [];
     this.lastRender = null;
-    this.transport.send('event', encodeCharacter(this.local));
+    this.transport.send('event', encodeCharacter(this.local, this.weapon));
   }
 
   handleMessage(_channel: Channel, bytes: Uint8Array): void {

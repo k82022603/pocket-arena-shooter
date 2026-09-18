@@ -79,13 +79,18 @@ export function decodeInput(buf: Uint8Array): TickedInput[] | null {
   return result;
 }
 
-export function encodeCharacter(id: CharacterId): Uint8Array {
-  return Uint8Array.of(PACKET_CHARACTER, characterIndex(id));
+export interface CharacterChoice {
+  character: CharacterId;
+  weapon: WeaponKind;
 }
 
-export function decodeCharacter(buf: Uint8Array): CharacterId | null {
-  if (buf.byteLength !== 2 || buf[0] !== PACKET_CHARACTER) return null;
-  return characterAt(buf[1]!);
+export function encodeCharacter(id: CharacterId, weapon: WeaponKind): Uint8Array {
+  return Uint8Array.of(PACKET_CHARACTER, characterIndex(id), weapon);
+}
+
+export function decodeCharacter(buf: Uint8Array): CharacterChoice | null {
+  if (buf.byteLength !== 3 || buf[0] !== PACKET_CHARACTER) return null;
+  return { character: characterAt(buf[1]!), weapon: buf[2] as WeaponKind };
 }
 
 class Writer {
@@ -145,7 +150,7 @@ class Reader {
 
 // snapshot: header, player x2, stats x2, bullet xN, pickup xK, (coop) core/wave, enemy xM
 const HEADER_BYTES = 1 + 4 + 4 + 4 + 4 + 1 + 1 + 1 + 1;
-const PLAYER_BYTES = 1 + 4 + 4 + 2 + 4 + 1 + 1 + 1 + 1 + 1 + 2 + 2;
+const PLAYER_BYTES = 1 + 4 + 4 + 2 + 4 + 1 + 1 + 1 + 1 + 1 + 1 + 2 + 2;
 const STATS_FIELDS: (keyof PlayerStats)[] = ['shots', 'hits', 'damageDealt', 'damageTaken', 'kills', 'dashes', 'downs'];
 const STATS_BYTES = STATS_FIELDS.length * 4;
 const BULLET_BYTES = 4 + 1 + 1 + 4 + 4 + 4 + 4 + 4 + 1 + 1;
@@ -193,6 +198,7 @@ export function encodeSnapshot(state: SimState, ackTick: number): Uint8Array {
     w.u8(p.dashCooldown);
     w.u8(p.reviveProgress);
     w.u8(p.weapon);
+    w.u8(p.baseWeapon);
     w.u16(p.weaponTicks);
     w.u16(p.boostTicks);
   }
@@ -261,6 +267,7 @@ export function decodeSnapshot(buf: Uint8Array): Snapshot | null {
       dashCooldown: r.u8(),
       reviveProgress: r.u8(),
       weapon: r.u8() as WeaponKind,
+      baseWeapon: r.u8() as WeaponKind,
       weaponTicks: r.u16(),
       boostTicks: r.u16(),
     });

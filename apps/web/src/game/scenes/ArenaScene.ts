@@ -19,6 +19,7 @@ import { SoloSync } from '../sync/SoloSync';
 import { HostSync } from '../sync/HostSync';
 import { GuestSync } from '../sync/GuestSync';
 import { selectedCharacter, selectedMode } from './TitleScene';
+import { selectedLoadout } from '../loadout';
 
 type ArenaData = { mode: 'solo' } | { mode: 'versus'; session: Session };
 
@@ -120,6 +121,7 @@ export class ArenaScene extends Phaser.Scene {
   create(data: ArenaData): void {
     const local = selectedCharacter(this);
     const mode = selectedMode(this);
+    const weapon = selectedLoadout(this, local);
     this.accumulator = 0;
     this.unsubscribes = [];
     this.ended = false;
@@ -133,7 +135,7 @@ export class ArenaScene extends Phaser.Scene {
     if (data.mode === 'versus') {
       const session = data.session;
       this.session = session;
-      this.sync = session.role === 'host' ? new HostSync(session, local, mode) : new GuestSync(session, local);
+      this.sync = session.role === 'host' ? new HostSync(session, local, mode, weapon) : new GuestSync(session, local, weapon);
       this.unsubscribes.push(session.onMessage((channel, bytes) => this.sync.handleMessage(channel, bytes)));
       this.unsubscribes.push(session.on('reconnected', () => this.sync.resync()));
       this.unsubscribes.push(session.on('failed', (reason) => this.endByDisconnect(reason ?? 'rejoin_failed')));
@@ -141,7 +143,7 @@ export class ArenaScene extends Phaser.Scene {
       if (new URLSearchParams(location.search).has('debug')) (window as unknown as { __link?: Session }).__link = session;
     } else {
       this.session = undefined;
-      this.sync = new SoloSync(local, mode);
+      this.sync = new SoloSync(local, mode, weapon);
     }
 
     this.world = this.add.container(0, 0);
@@ -317,8 +319,9 @@ export class ArenaScene extends Phaser.Scene {
       if (!first && !this.prevBullets.has(b.id)) {
         this.fx.muzzle(b.x - b.vx * SIM.dt, b.y - b.vy * SIM.dt, Math.atan2(b.vy, b.vx), color);
         if (b.owner === ENEMY_OWNER) sfx.enemyShot();
-        else if (b.kind === 1) sfx.shotgun();
+        else if (b.kind === 1 || b.kind === 5) sfx.shotgun();
         else if (b.kind === 2) sfx.laser();
+        else if (b.kind === 4) sfx.snipe();
         else sfx.shot();
       }
     }
@@ -361,7 +364,7 @@ export class ArenaScene extends Phaser.Scene {
           sfx.revive();
         }
         if (p.hp > 0 && p.dashTicks > 0 && this.prevDash[p.id] === 0) sfx.dash();
-        if (p.weapon !== this.prevWeapon[p.id] && p.weapon !== 0) {
+        if (p.weapon !== this.prevWeapon[p.id] && p.weaponTicks > 0) {
           this.fx.ring(p.x, p.y, WEAPONS[p.weapon].color, 70, 400, 3);
           this.fx.burst(p.x, p.y, WEAPONS[p.weapon].color, 14, 160, 400, 2.5);
           sfx.pickup();
@@ -477,8 +480,8 @@ export class ArenaScene extends Phaser.Scene {
 
     for (const b of rs.bullets) {
       const color = this.bulletColor(b, rs);
-      const laser = b.kind === 2;
-      const trail = laser ? 5 : b.kind === 1 ? 2 : 3;
+      const laser = b.kind === 2 || b.kind === 4;
+      const trail = laser ? 5 : b.kind === 1 || b.kind === 5 ? 2 : 3;
       const tx = b.x - b.vx * SIM.dt * trail;
       const ty = b.y - b.vy * SIM.dt * trail;
       g.lineStyle(laser ? 12 : 7, color, laser ? 0.25 : 0.18);
@@ -486,7 +489,7 @@ export class ArenaScene extends Phaser.Scene {
       g.lineStyle(laser ? 4 : 2.5, color, 0.85);
       g.lineBetween(tx, ty, b.x, b.y);
       g.fillStyle(0xffffff, 1);
-      g.fillCircle(b.x, b.y, b.kind === 1 ? SIM.bulletRadius - 2 : SIM.bulletRadius - 1);
+      g.fillCircle(b.x, b.y, b.kind === 1 || b.kind === 5 || b.kind === 3 ? SIM.bulletRadius - 2 : SIM.bulletRadius - 1);
     }
 
     if (this.desktop.active) this.renderAimGuide(rs, now);
@@ -709,7 +712,8 @@ export class ArenaScene extends Phaser.Scene {
     const [p0, p1] = rs.players;
     const hp = (p: PlayerState) => {
       let text = `${CHARACTERS[p.character].name} ${p.hp}/${CHARACTERS[p.character].stats.maxHp}`;
-      if (p.weapon !== 0) text += ` [${WEAPONS[p.weapon].name} ${Math.ceil(p.weaponTicks / SIM.tickRate)}s]`;
+      if (p.weaponTicks > 0) text += ` [${WEAPONS[p.weapon].name} ${Math.ceil(p.weaponTicks / SIM.tickRate)}s]`;
+      else if (p.weapon !== 0) text += ` [${WEAPONS[p.weapon].name}]`;
       if (p.boostTicks > 0) text += ` [부스트 ${Math.ceil(p.boostTicks / SIM.tickRate)}s]`;
       return text;
     };

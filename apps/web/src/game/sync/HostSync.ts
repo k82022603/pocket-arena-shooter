@@ -1,6 +1,7 @@
 import type { Channel } from '../../net/transport';
 import type { CharacterId } from '../../sim/characters';
-import { createInitialState, outcomeOf, setPlayerCharacter, step, summarize, type MatchSummary, type Outcome } from '../../sim/core';
+import { createInitialState, outcomeOf, setPlayerCharacter, setPlayerLoadout, step, summarize, type MatchSummary, type Outcome } from '../../sim/core';
+import type { WeaponKind } from '../../sim/weapons';
 import { PositionHistory } from '../../sim/history';
 import { decodeCharacter, decodeInput, encodeCharacter, encodeSnapshot } from '../../sim/serialize';
 import { EMPTY_INPUT, SIM, type GameMode, type InputFrame, type SimState } from '../../sim/types';
@@ -34,23 +35,28 @@ export class HostSync implements GameSync {
     private readonly transport: SyncLink,
     private readonly local: CharacterId,
     mode: GameMode,
+    private readonly weapon: WeaponKind,
   ) {
     this.state = createInitialState([local, local], { mode, playerCount: 2, seed: Date.now() });
     this.state.tick = monotonicTick();
-    transport.send('event', encodeCharacter(local));
+    setPlayerLoadout(this.state, 0, weapon);
+    transport.send('event', encodeCharacter(local, weapon));
   }
 
   resync(): void {
     this.queue.length = 0;
     this.lastGuestInput = EMPTY_INPUT;
-    this.transport.send('event', encodeCharacter(this.local));
+    this.transport.send('event', encodeCharacter(this.local, this.weapon));
     this.transport.send('event', encodeSnapshot(this.state, this.ackTick));
   }
 
   handleMessage(channel: Channel, bytes: Uint8Array): void {
     if (channel === 'event') {
-      const character = decodeCharacter(bytes);
-      if (character) setPlayerCharacter(this.state, 1, character);
+      const choice = decodeCharacter(bytes);
+      if (choice) {
+        setPlayerCharacter(this.state, 1, choice.character);
+        setPlayerLoadout(this.state, 1, choice.weapon);
+      }
       return;
     }
     const decoded = decodeInput(bytes);

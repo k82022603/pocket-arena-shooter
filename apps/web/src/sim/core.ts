@@ -15,7 +15,7 @@ import {
   type PlayerStats,
   type SimState,
 } from './types';
-import { PICKUP, WEAPONS, rollPickupKind, type PickupKind } from './weapons';
+import { PICKUP, WEAPONS, isLoadoutWeapon, rollPickupKind, type PickupKind, type WeaponKind } from './weapons';
 
 export interface StepOptions {
   // 각 플레이어의 이번 틱 입력에 붙은 틱 번호 (탄환 spawnTick). 기본은 시뮬레이션 틱.
@@ -66,6 +66,7 @@ function spawnPlayer(id: 0 | 1, character: CharacterId, mode: GameMode): PlayerS
     dashCooldown: 0,
     reviveProgress: 0,
     weapon: 0,
+    baseWeapon: 0,
     weaponTicks: 0,
     boostTicks: 0,
   };
@@ -77,6 +78,13 @@ export function setPlayerCharacter(state: SimState, id: 0 | 1, character: Charac
   const wasFull = p.hp >= CHARACTERS[p.character].stats.maxHp;
   p.character = character;
   if (wasFull) p.hp = CHARACTERS[character].stats.maxHp;
+}
+
+export function setPlayerLoadout(state: SimState, id: 0 | 1, weapon: WeaponKind): void {
+  if (!isLoadoutWeapon(weapon)) return;
+  const p = state.players[id];
+  p.baseWeapon = weapon;
+  if (p.weaponTicks === 0) p.weapon = weapon;
 }
 
 export function step(state: SimState, inputs: readonly [InputFrame, InputFrame], opts: StepOptions = {}): void {
@@ -113,7 +121,7 @@ export function applyPlayerInput(p: PlayerState, input: InputFrame): void {
   if (p.boostTicks > 0) p.boostTicks -= 1;
   if (p.weaponTicks > 0) {
     p.weaponTicks -= 1;
-    if (p.weaponTicks === 0) p.weapon = 0;
+    if (p.weaponTicks === 0) p.weapon = p.baseWeapon;
   }
 
   if (input.dash && p.dashCooldown === 0 && p.dashTicks === 0) {
@@ -133,18 +141,21 @@ export function applyPlayerInput(p: PlayerState, input: InputFrame): void {
 
 export function consumeFire(p: PlayerState, input: InputFrame): boolean {
   if (p.hp <= 0 || !input.fire || p.fireCooldown > 0) return false;
-  p.fireCooldown = WEAPONS[p.weapon].intervalTicks ?? CHARACTERS[p.character].stats.fireIntervalTicks;
+  const spec = WEAPONS[p.weapon];
+  p.fireCooldown = spec.intervalTicks ?? Math.max(3, Math.round(CHARACTERS[p.character].stats.fireIntervalTicks * spec.intervalMul));
   return true;
 }
 
 // 현재 무기로 한 번 발사했을 때 생기는 탄환들. id는 firstId부터 연속.
+// 흔들림은 spawnTick에서 결정적으로 뽑아 호스트와 게스트 예측이 같은 각도를 얻는다.
 export function makeBullets(p: PlayerState, firstId: number, spawnTick: number, lagTicks: number): BulletState[] {
   const weapon = WEAPONS[p.weapon];
   const damage = Math.max(1, Math.round(CHARACTERS[p.character].stats.damage * weapon.damageMul));
+  const jitter = weapon.jitterRad === 0 ? 0 : (((spawnTick * 7919 + p.id * 104729) % 1000) / 1000 - 0.5) * weapon.jitterRad;
   const bullets: BulletState[] = [];
   for (let i = 0; i < weapon.pellets; i++) {
     const offset = weapon.pellets === 1 ? 0 : (i / (weapon.pellets - 1) - 0.5) * weapon.spreadRad;
-    const angle = p.aimAngle + offset;
+    const angle = p.aimAngle + offset + jitter;
     const dx = Math.cos(angle);
     const dy = Math.sin(angle);
     bullets.push({

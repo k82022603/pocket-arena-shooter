@@ -99,6 +99,12 @@ class SfxEngine {
     this.tone(180, 60, 0.16, 'square', 0.18);
   }
 
+  snipe(): void {
+    if (!this.ready('snipe', 120)) return;
+    this.noise(0.12, 0.4, 5000, 400);
+    this.tone(600, 90, 0.22, 'square', 0.16);
+  }
+
   laser(): void {
     if (!this.ready('laser', 60)) return;
     this.tone(1400, 400, 0.16, 'sawtooth', 0.12);

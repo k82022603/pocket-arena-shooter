@@ -1,26 +1,47 @@
-// 0 라이플(기본), 1 산탄총, 2 레이저
-export type WeaponKind = 0 | 1 | 2;
+import type { CharacterId } from './characters';
+
+// 0 라이플, 1 산탄총(픽업), 2 레이저(픽업), 3 기관총, 4 장총, 5 산탄(기본 무기판)
+export type WeaponKind = 0 | 1 | 2 | 3 | 4 | 5;
 
 export interface WeaponSpec {
   name: string;
-  // null이면 파티마 고유 연사 간격을 쓴다
+  // 절대 연사 간격(픽업용). null이면 파티마 고유 간격 × intervalMul
   intervalTicks: number | null;
+  intervalMul: number;
   pellets: number;
   // 산탄 전체 퍼짐 각(라디안)
   spreadRad: number;
+  // 매 발 무작위 흔들림(라디안, spawnTick에서 결정적으로 유도)
+  jitterRad: number;
   speed: number;
   ttl: number;
   damageMul: number;
   pierce: boolean;
   durationTicks: number;
   color: number;
+  description: string;
 }
 
 export const WEAPONS: Record<WeaponKind, WeaponSpec> = {
-  0: { name: '라이플', intervalTicks: null, pellets: 1, spreadRad: 0, speed: 900, ttl: 90, damageMul: 1, pierce: false, durationTicks: 0, color: 0xffe066 },
-  1: { name: '산탄총', intervalTicks: 30, pellets: 5, spreadRad: 0.42, speed: 800, ttl: 26, damageMul: 0.7, pierce: false, durationTicks: 600, color: 0xffa040 },
-  2: { name: '레이저', intervalTicks: 24, pellets: 1, spreadRad: 0, speed: 1400, ttl: 60, damageMul: 2, pierce: true, durationTicks: 600, color: 0x4cf0ff },
+  0: { name: '라이플', intervalTicks: null, intervalMul: 1, pellets: 1, spreadRad: 0, jitterRad: 0, speed: 900, ttl: 90, damageMul: 1, pierce: false, durationTicks: 0, color: 0xffe066, description: '균형 잡힌 기본 화기' },
+  1: { name: '산탄총', intervalTicks: 30, intervalMul: 1, pellets: 5, spreadRad: 0.42, jitterRad: 0, speed: 800, ttl: 26, damageMul: 0.7, pierce: false, durationTicks: 600, color: 0xffa040, description: '픽업 · 근거리 5발' },
+  2: { name: '레이저', intervalTicks: 24, intervalMul: 1, pellets: 1, spreadRad: 0, jitterRad: 0, speed: 1400, ttl: 60, damageMul: 2, pierce: true, durationTicks: 600, color: 0x4cf0ff, description: '픽업 · 관통 고속탄' },
+  3: { name: '기관총', intervalTicks: null, intervalMul: 0.5, pellets: 1, spreadRad: 0, jitterRad: 0.16, speed: 900, ttl: 70, damageMul: 0.55, pierce: false, durationTicks: 0, color: 0xfff3b0, description: '빠른 연사, 낮은 위력, 탄이 흔들림' },
+  4: { name: '장총', intervalTicks: null, intervalMul: 3.2, pellets: 1, spreadRad: 0, jitterRad: 0, speed: 1500, ttl: 90, damageMul: 2.4, pierce: false, durationTicks: 0, color: 0xffffff, description: '느리지만 한 발이 무겁고 빠름' },
+  5: { name: '산탄', intervalTicks: null, intervalMul: 2.8, pellets: 4, spreadRad: 0.36, jitterRad: 0, speed: 820, ttl: 24, damageMul: 0.6, pierce: false, durationTicks: 0, color: 0xffa040, description: '근거리 4발 부채꼴' },
 };
+
+// 타이틀에서 고를 수 있는 기본 무기. 첫 항목이 기본값.
+export const LOADOUTS: Record<CharacterId, readonly WeaponKind[]> = {
+  lachesis: [0, 3, 4],
+  clotho: [0, 3, 5],
+  atropos: [0, 4, 5],
+  est: [0, 5, 3],
+};
+
+export function isLoadoutWeapon(kind: WeaponKind): boolean {
+  return WEAPONS[kind].durationTicks === 0;
+}
 
 // 0 힐팩, 1 산탄총, 2 레이저, 3 속도 부스트
 export type PickupKind = 0 | 1 | 2 | 3;
