@@ -1,6 +1,7 @@
 import { SignalingClient } from './signaling';
 import { WebRtcTransport, type PeerRole } from './webrtc';
 import { RelayTransport } from './relay';
+import { SimulatedTransport, netSimFromUrl } from './simulated';
 import type { Transport } from './transport';
 
 export interface Session {
@@ -28,11 +29,14 @@ export async function joinSession(code: string): Promise<Session> {
 
 async function connectWithFallback(signaling: SignalingClient, role: PeerRole): Promise<Transport> {
   const rtc = new WebRtcTransport(signaling, role);
+  let transport: Transport;
   try {
     await rtc.connect(5000);
-    return rtc;
+    transport = rtc;
   } catch {
     rtc.close();
-    return new RelayTransport(signaling);
+    transport = new RelayTransport(signaling);
   }
+  const sim = netSimFromUrl();
+  return sim ? new SimulatedTransport(transport, sim) : transport;
 }

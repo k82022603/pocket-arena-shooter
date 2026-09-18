@@ -34,11 +34,16 @@ export function setPlayerCharacter(state: SimState, id: 0 | 1, character: Charac
 
 export function step(state: SimState, inputs: readonly [InputFrame, InputFrame]): void {
   state.tick += 1;
-  for (const p of state.players) stepPlayer(state, p, inputs[p.id]);
+  for (const p of state.players) {
+    if (p.hp <= 0) continue;
+    applyPlayerInput(p, inputs[p.id]);
+    tryFire(state, p, inputs[p.id]);
+  }
   stepBullets(state);
 }
 
-function stepPlayer(state: SimState, p: PlayerState, input: InputFrame): void {
+// 이동·조준·대시·쿨다운만 진행한다. 발사는 호스트 권위이므로 게스트 예측에서는 호출하지 않는다.
+export function applyPlayerInput(p: PlayerState, input: InputFrame): void {
   if (p.hp <= 0) return;
   const stats = CHARACTERS[p.character].stats;
 
@@ -57,24 +62,25 @@ function stepPlayer(state: SimState, p: PlayerState, input: InputFrame): void {
   p.x = clamp(p.x, SIM.playerRadius, SIM.arenaW - SIM.playerRadius);
   p.y = clamp(p.y, SIM.playerRadius, SIM.arenaH - SIM.playerRadius);
 
-  const aimLen = Math.hypot(input.aimX, input.aimY);
-  if (aimLen > 0) p.aimAngle = Math.atan2(input.aimY, input.aimX);
+  if (Math.hypot(input.aimX, input.aimY) > 0) p.aimAngle = Math.atan2(input.aimY, input.aimX);
+}
 
-  if (input.fire && p.fireCooldown === 0) {
-    p.fireCooldown = stats.fireIntervalTicks;
-    const dx = Math.cos(p.aimAngle);
-    const dy = Math.sin(p.aimAngle);
-    state.bullets.push({
-      id: state.nextBulletId++,
-      owner: p.id,
-      x: p.x + dx * (SIM.playerRadius + SIM.bulletRadius),
-      y: p.y + dy * (SIM.playerRadius + SIM.bulletRadius),
-      vx: dx * SIM.bulletSpeed,
-      vy: dy * SIM.bulletSpeed,
-      damage: stats.damage,
-      ttl: SIM.bulletTtl,
-    });
-  }
+function tryFire(state: SimState, p: PlayerState, input: InputFrame): void {
+  if (!input.fire || p.fireCooldown > 0) return;
+  const stats = CHARACTERS[p.character].stats;
+  p.fireCooldown = stats.fireIntervalTicks;
+  const dx = Math.cos(p.aimAngle);
+  const dy = Math.sin(p.aimAngle);
+  state.bullets.push({
+    id: state.nextBulletId++,
+    owner: p.id,
+    x: p.x + dx * (SIM.playerRadius + SIM.bulletRadius),
+    y: p.y + dy * (SIM.playerRadius + SIM.bulletRadius),
+    vx: dx * SIM.bulletSpeed,
+    vy: dy * SIM.bulletSpeed,
+    damage: stats.damage,
+    ttl: SIM.bulletTtl,
+  });
 }
 
 function stepBullets(state: SimState): void {
@@ -97,6 +103,12 @@ function stepBullets(state: SimState): void {
     alive.push(b);
   }
   state.bullets = alive;
+}
+
+export function winnerOf(state: SimState): 0 | 1 | null {
+  const [p0, p1] = state.players;
+  if (p0.hp > 0 && p1.hp > 0) return null;
+  return p0.hp > 0 ? 0 : 1;
 }
 
 function clamp(v: number, min: number, max: number): number {

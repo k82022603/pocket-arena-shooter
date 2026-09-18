@@ -1,5 +1,5 @@
 import type { SignalPayload } from '@shooter/protocol';
-import type { Channel, MessageHandler, Transport } from './transport';
+import type { Channel, MessageHandler, Transport, Unsubscribe } from './transport';
 import type { SignalingClient } from './signaling';
 
 export type PeerRole = 'host' | 'guest';
@@ -57,12 +57,14 @@ export class WebRtcTransport implements Transport {
     if (ch?.readyState === 'open') ch.send(data as Uint8Array<ArrayBuffer>);
   }
 
-  onMessage(handler: MessageHandler): void {
+  onMessage(handler: MessageHandler): Unsubscribe {
     this.messageHandlers.add(handler);
+    return () => this.messageHandlers.delete(handler);
   }
 
-  onClose(handler: () => void): void {
+  onClose(handler: () => void): Unsubscribe {
     this.closeHandlers.add(handler);
+    return () => this.closeHandlers.delete(handler);
   }
 
   close(): void {

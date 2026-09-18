@@ -1,21 +1,23 @@
 import Phaser from 'phaser';
-import { CHARACTERS, characterAt, characterIndex, type CharacterId } from '../../sim/characters';
-import { createInitialState, setPlayerCharacter, step } from '../../sim/core';
-import { decodeCharacter, decodeInput, encodeCharacter, encodeInput } from '../../sim/serialize';
-import { EMPTY_INPUT, SIM, type InputFrame, type SimState } from '../../sim/types';
+import { CHARACTERS } from '../../sim/characters';
+import { SIM, type InputFrame, type PlayerState } from '../../sim/types';
 import type { Session } from '../../net/connect';
+import type { Unsubscribe } from '../../net/transport';
 import { VirtualStick } from '../input/VirtualStick';
 import { FONT, makeButton } from '../ui';
+import type { GameSync } from '../sync/GameSync';
+import { SoloSync } from '../sync/SoloSync';
+import { HostSync } from '../sync/HostSync';
+import { GuestSync } from '../sync/GuestSync';
 import { selectedCharacter } from './TitleScene';
 
 type ArenaData = { mode: 'solo' } | { mode: 'versus'; session: Session };
 
 export class ArenaScene extends Phaser.Scene {
-  private state!: SimState;
-  private accumulator = 0;
-  private localId: 0 | 1 = 0;
-  private remoteInput: InputFrame = { ...EMPTY_INPUT };
+  private sync!: GameSync;
   private session?: Session;
+  private unsubscribes: Unsubscribe[] = [];
+  private accumulator = 0;
 
   private world!: Phaser.GameObjects.Container;
   private gfx!: Phaser.GameObjects.Graphics;
@@ -32,29 +34,17 @@ export class ArenaScene extends Phaser.Scene {
   create(data: ArenaData): void {
     const local = selectedCharacter(this);
     this.accumulator = 0;
-    this.remoteInput = { ...EMPTY_INPUT };
+    this.unsubscribes = [];
 
     if (data.mode === 'versus') {
       this.session = data.session;
-      this.localId = data.session.role === 'host' ? 0 : 1;
-      const remoteId = this.localId === 0 ? 1 : 0;
-      // 상대 캐릭터는 event 채널로 도착할 때까지 임시로 내 캐릭터와 동일하게 둔다
-      this.state = createInitialState([local, local]);
-      data.session.transport.onMessage((channel, bytes) => {
-        if (channel === 'input') {
-          const decoded = decodeInput(bytes);
-          if (decoded) this.remoteInput = decoded.frame;
-        } else if (channel === 'event') {
-          const character = decodeCharacter(bytes);
-          if (character) setPlayerCharacter(this.state, remoteId, character);
-        }
-      });
-      data.session.transport.onClose(() => this.scene.start('Title'));
-      data.session.transport.send('event', encodeCharacter(local));
+      const transport = data.session.transport;
+      this.sync = data.session.role === 'host' ? new HostSync(transport, local) : new GuestSync(transport, local);
+      this.unsubscribes.push(transport.onMessage((channel, bytes) => this.sync.handleMessage(channel, bytes)));
+      this.unsubscribes.push(transport.onClose(() => this.scene.start('Title')));
     } else {
       this.session = undefined;
-      this.localId = 0;
-      this.state = createInitialState([local, this.soloOpponent(local)]);
+      this.sync = new SoloSync(local);
     }
 
     this.world = this.add.container(0, 0);
@@ -81,35 +71,21 @@ export class ArenaScene extends Phaser.Scene {
   update(_time: number, deltaMs: number): void {
     this.accumulator += Math.min(deltaMs, 100) / 1000;
     while (this.accumulator >= SIM.dt) {
-      this.stepOnce();
       this.accumulator -= SIM.dt;
+      this.sync.step(this.readLocalInput());
+      const winner = this.sync.winner();
+      if (winner !== null) {
+        this.scene.start('Result', { winner, localId: this.sync.localId, session: this.session });
+        return;
+      }
     }
     this.render();
-  }
-
-  private soloOpponent(local: CharacterId): CharacterId {
-    return characterAt(characterIndex(local) + 1);
   }
 
   private makeNameLabel(): Phaser.GameObjects.Text {
     const label = this.add.text(0, 0, '', { fontFamily: FONT, fontSize: '16px', color: '#ffffff' }).setOrigin(0.5, 1);
     this.world.add(label);
     return label;
-  }
-
-  private stepOnce(): void {
-    const local = this.readLocalInput();
-    if (this.session) this.session.transport.send('input', encodeInput(this.state.tick, local));
-
-    const inputs: [InputFrame, InputFrame] =
-      this.localId === 0 ? [local, this.remoteInput] : [this.remoteInput, local];
-    step(this.state, inputs);
-
-    const [p0, p1] = this.state.players;
-    if (p0.hp <= 0 || p1.hp <= 0) {
-      const winner = p0.hp > 0 ? 0 : 1;
-      this.scene.start('Result', { winner, localId: this.localId, session: this.session });
-    }
   }
 
   private readLocalInput(): InputFrame {
@@ -129,13 +105,14 @@ export class ArenaScene extends Phaser.Scene {
   }
 
   private render(): void {
+    const rs = this.sync.renderState(performance.now());
     const g = this.gfx;
     g.clear();
 
     g.lineStyle(2, 0x2a3552, 1);
     g.strokeRect(0, 0, SIM.arenaW, SIM.arenaH);
 
-    for (const p of this.state.players) {
+    for (const p of rs.players) {
       const character = CHARACTERS[p.character];
       const alive = p.hp > 0;
       g.fillStyle(character.color, alive ? 1 : 0.3);
@@ -153,16 +130,18 @@ export class ArenaScene extends Phaser.Scene {
       );
       const label = this.nameLabels[p.id];
       label.setPosition(p.x, p.y - SIM.playerRadius - 6).setAlpha(alive ? 1 : 0.4);
-      label.setText(`${character.name}${p.id === this.localId ? ' (나)' : ''}`);
+      label.setText(`${character.name}${p.id === this.sync.localId ? ' (나)' : ''}`);
     }
 
     g.fillStyle(0xffe066, 1);
-    for (const b of this.state.bullets) g.fillCircle(b.x, b.y, SIM.bulletRadius);
+    for (const b of rs.bullets) g.fillCircle(b.x, b.y, SIM.bulletRadius);
 
-    const [p0, p1] = this.state.players;
-    const hp = (p: typeof p0) => `${CHARACTERS[p.character].name} ${p.hp}/${CHARACTERS[p.character].stats.maxHp}`;
-    const rtt = this.session ? `  RTT ${this.session.transport.rtt.toFixed(0)}ms (${this.session.transport.kind})` : '';
-    this.hud.setText(`${hp(p0)}   vs   ${hp(p1)}   tick ${this.state.tick}${rtt}`);
+    const [p0, p1] = rs.players;
+    const hp = (p: PlayerState) => `${CHARACTERS[p.character].name} ${p.hp}/${CHARACTERS[p.character].stats.maxHp}`;
+    const net = this.session
+      ? `\nRTT ${this.session.transport.rtt.toFixed(0)}ms  ${this.session.transport.kind}/${this.sync.kind}  ${this.sync.debugInfo()}`
+      : '';
+    this.hud.setText(`${hp(p0)}   vs   ${hp(p1)}   tick ${rs.tick}${net}`);
   }
 
   private layout(): void {
@@ -179,6 +158,8 @@ export class ArenaScene extends Phaser.Scene {
   }
 
   private cleanup(): void {
+    for (const off of this.unsubscribes) off();
+    this.unsubscribes = [];
     this.scale.off('resize', this.layout, this);
     this.moveStick.destroy();
     this.aimStick.destroy();

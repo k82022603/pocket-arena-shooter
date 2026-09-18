@@ -1,4 +1,4 @@
-import type { Channel, MessageHandler, Transport } from './transport';
+import type { Channel, MessageHandler, Transport, Unsubscribe } from './transport';
 import type { SignalingClient } from './signaling';
 
 const CHANNEL_ID: Record<Channel, number> = { input: 0, event: 1 };
@@ -30,12 +30,14 @@ export class RelayTransport implements Transport {
     this.signaling.sendBinary(framed);
   }
 
-  onMessage(handler: MessageHandler): void {
+  onMessage(handler: MessageHandler): Unsubscribe {
     this.messageHandlers.add(handler);
+    return () => this.messageHandlers.delete(handler);
   }
 
-  onClose(handler: () => void): void {
+  onClose(handler: () => void): Unsubscribe {
     this.closeHandlers.add(handler);
+    return () => this.closeHandlers.delete(handler);
   }
 
   close(): void {
