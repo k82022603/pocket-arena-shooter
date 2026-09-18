@@ -1,0 +1,15 @@
+{
+  "name": "arena-shooter",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev -w apps/web",
+    "dev:https": "npm run dev:https -w apps/web",
+    "dev:signaling": "npm run dev -w apps/signaling",
+    "build": "npm run build --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present"
+  }
+}
