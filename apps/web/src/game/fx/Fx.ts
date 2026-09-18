@@ -42,6 +42,9 @@ interface Muzzle {
 
 // 시각 효과 전용 파티클 시스템. 시뮬레이션과 무관하므로 비결정적 난수를 써도 된다.
 export class Fx {
+  // 저사양 기기에서 파티클 수를 줄이는 배율 (0.3~1)
+  quality = 1;
+
   private particles: Particle[] = [];
   private rings: Ring[] = [];
   private ghosts: Ghost[] = [];
@@ -51,7 +54,8 @@ export class Fx {
   private shakeAmp = 0;
 
   burst(x: number, y: number, color: number, count: number, speed: number, life: number, size: number, drag = 0.92): void {
-    for (let i = 0; i < count; i++) {
+    const n = Math.max(1, Math.round(count * this.quality));
+    for (let i = 0; i < n; i++) {
       const a = Math.random() * Math.PI * 2;
       const s = speed * (0.4 + Math.random() * 0.8);
       const l = life * (0.6 + Math.random() * 0.6);
@@ -64,6 +68,7 @@ export class Fx {
   }
 
   ghost(x: number, y: number, r: number, color: number, life = 220): void {
+    if (this.quality < 0.6 && this.ghosts.length > 6) return;
     this.ghosts.push({ x, y, r, life, maxLife: life, color });
   }
 

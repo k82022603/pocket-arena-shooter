@@ -2,6 +2,8 @@ import Phaser from 'phaser';
 import { CHARACTERS, CHARACTER_ORDER, DEFAULT_CHARACTER, characterAt, characterIndex, type CharacterId } from '../../sim/characters';
 import type { GameMode } from '../../sim/types';
 import { LOOKS, drawFatima } from '../fx/Fatima';
+import { sfx } from '../audio/Sfx';
+import { canInstall, isStandalone, onInstallAvailabilityChange, promptInstall } from '../../pwa';
 import { FONT, makeButton, makeLabel } from '../ui';
 
 export const REGISTRY_CHARACTER = 'character';
@@ -27,6 +29,8 @@ export class TitleScene extends Phaser.Scene {
   private previewX = 0;
   private previewY = 0;
   private modeButton!: Phaser.GameObjects.Text;
+  private muteButton!: Phaser.GameObjects.Text;
+  private installButton!: Phaser.GameObjects.Text;
 
   constructor() {
     super('Title');
@@ -59,9 +63,44 @@ export class TitleScene extends Phaser.Scene {
 
     const btnY = height * 0.68;
     const step = 56;
-    makeButton(this, rx, btnY, '혼자 하기', () => this.scene.start('Arena', { mode: 'solo' })).setFontSize(24);
-    makeButton(this, rx, btnY + step, '방 만들기', () => this.scene.start('Lobby', { role: 'host' })).setFontSize(24);
-    makeButton(this, rx, btnY + step * 2, '참가하기', () => this.scene.start('Lobby', { role: 'guest' })).setFontSize(24);
+    makeButton(this, rx, btnY, '혼자 하기', () => this.go('Arena', { mode: 'solo' })).setFontSize(24);
+    makeButton(this, rx, btnY + step, '방 만들기', () => this.go('Lobby', { role: 'host' })).setFontSize(24);
+    makeButton(this, rx, btnY + step * 2, '참가하기', () => this.go('Lobby', { role: 'guest' })).setFontSize(24);
+
+    this.muteButton = makeButton(this, width - 44, 30, '', () => this.toggleMute()).setFontSize(18);
+    this.refreshMute();
+
+    this.installButton = makeButton(this, this.previewX, height * 0.93, '홈 화면에 설치', () => void this.install())
+      .setFontSize(16)
+      .setVisible(false);
+    this.refreshInstall();
+    const off = onInstallAvailabilityChange(() => this.refreshInstall());
+    this.events.once('shutdown', off);
+  }
+
+  private go(scene: string, data: object): void {
+    sfx.ui();
+    this.scene.start(scene, data);
+  }
+
+  private toggleMute(): void {
+    sfx.setMuted(!sfx.muted);
+    this.refreshMute();
+    sfx.ui();
+  }
+
+  private refreshMute(): void {
+    this.muteButton.setText(sfx.muted ? '🔇' : '🔊');
+  }
+
+  private refreshInstall(): void {
+    this.installButton.setVisible(canInstall() && !isStandalone());
+  }
+
+  private async install(): Promise<void> {
+    sfx.ui();
+    await promptInstall();
+    this.refreshInstall();
   }
 
   update(time: number): void {
@@ -91,11 +130,13 @@ export class TitleScene extends Phaser.Scene {
     const next = characterAt(characterIndex(selectedCharacter(this)) + delta);
     this.registry.set(REGISTRY_CHARACTER, next);
     this.refreshCharacter();
+    sfx.ui();
   }
 
   private toggleMode(): void {
     this.registry.set(REGISTRY_MODE, selectedMode(this) === 'duel' ? 'coop' : 'duel');
     this.refreshMode();
+    sfx.ui();
   }
 
   private refreshMode(): void {

@@ -1,4 +1,6 @@
 import Phaser from 'phaser';
+import './pwa';
+import { sfx } from './game/audio/Sfx';
 import { BootScene } from './game/scenes/BootScene';
 import { TitleScene } from './game/scenes/TitleScene';
 import { LobbyScene } from './game/scenes/LobbyScene';
@@ -20,3 +22,8 @@ const config: Phaser.Types.Core.GameConfig = {
 };
 
 new Phaser.Game(config);
+
+// iOS/Chrome 자동재생 정책: 첫 사용자 제스처에서 오디오 컨텍스트를 연다.
+for (const type of ['pointerdown', 'touchstart', 'keydown'] as const) {
+  window.addEventListener(type, () => sfx.unlock(), { passive: true });
+}

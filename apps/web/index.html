@@ -10,12 +10,18 @@
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="apple-mobile-web-app-title" content="Arena" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png" />
     <link rel="stylesheet" href="/src/style.css" />
     <title>Arena Shooter</title>
   </head>
   <body>
     <div id="game"></div>
+    <div id="rotate" aria-hidden="true">
+      <div class="rotate-icon">⟳</div>
+      <div>기기를 가로로 돌려주세요</div>
+    </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

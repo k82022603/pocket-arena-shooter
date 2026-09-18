@@ -6,6 +6,7 @@ import type { Unsubscribe } from '../../net/transport';
 import { VirtualStick } from '../input/VirtualStick';
 import { Fx } from '../fx/Fx';
 import { LOOKS, drawFatima } from '../fx/Fatima';
+import { sfx } from '../audio/Sfx';
 import { FONT, makeButton } from '../ui';
 import type { GameSync, RenderState } from '../sync/GameSync';
 import { SoloSync } from '../sync/SoloSync';
@@ -60,14 +61,45 @@ export class ArenaScene extends Phaser.Scene {
   private prevEnemies = new Map<number, EnemyMemo>();
   private prevPickups = new Set<number>();
   private prevHp: [number, number] = [0, 0];
+  private prevDash: [number, number] = [0, 0];
   private prevPos: [{ x: number; y: number } | null, { x: number; y: number } | null] = [null, null];
   private trail: [{ x: number; y: number }, { x: number; y: number }] = [{ x: -1, y: 0 }, { x: 1, y: 0 }];
   private prevCoreHp = 0;
   private prevPhase = -1;
   private readonly flashUntil = new Map<string, number>();
+  private wakeLock: WakeLockSentinel | null = null;
+  private perfSamples = 0;
+  private perfElapsed = 0;
+  private perfDecided = false;
 
   constructor() {
     super('Arena');
+  }
+
+  private async acquireWakeLock(): Promise<void> {
+    if (!('wakeLock' in navigator) || this.wakeLock) return;
+    try {
+      this.wakeLock = await navigator.wakeLock.request('screen');
+      this.wakeLock.addEventListener('release', () => (this.wakeLock = null));
+    } catch {
+      this.wakeLock = null;
+    }
+  }
+
+  private readonly onVisibility = (): void => {
+    if (document.visibilityState === 'visible') void this.acquireWakeLock();
+  };
+
+  // 처음 3초 동안 프레임 시간을 재서 느리면 파티클을 줄인다.
+  private samplePerformance(deltaMs: number): void {
+    if (this.perfDecided) return;
+    this.perfSamples += 1;
+    this.perfElapsed += deltaMs;
+    if (this.perfElapsed < 3000) return;
+    this.perfDecided = true;
+    const fps = (this.perfSamples * 1000) / this.perfElapsed;
+    const lowMemory = (navigator as unknown as { deviceMemory?: number }).deviceMemory ?? 8;
+    this.fx.quality = fps < 40 ? 0.35 : fps < 52 || lowMemory <= 2 ? 0.6 : 1;
   }
 
   create(data: ArenaData): void {
@@ -127,9 +159,16 @@ export class ArenaScene extends Phaser.Scene {
     this.scale.on('resize', this.layout, this);
     this.layout();
     this.events.once('shutdown', this.cleanup, this);
+
+    this.perfSamples = 0;
+    this.perfElapsed = 0;
+    this.perfDecided = false;
+    void this.acquireWakeLock();
+    document.addEventListener('visibilitychange', this.onVisibility);
   }
 
   update(_time: number, deltaMs: number): void {
+    this.samplePerformance(deltaMs);
     this.accumulator += Math.min(deltaMs, 100) / 1000;
     while (this.accumulator >= SIM.dt) {
       this.accumulator -= SIM.dt;
@@ -177,13 +216,18 @@ export class ArenaScene extends Phaser.Scene {
       bullets.set(b.id, { x: b.x, y: b.y, vx: b.vx, vy: b.vy, ttl: b.ttl, color });
       if (!first && !this.prevBullets.has(b.id)) {
         this.fx.muzzle(b.x - b.vx * SIM.dt, b.y - b.vy * SIM.dt, Math.atan2(b.vy, b.vx), color);
+        if (b.owner === ENEMY_OWNER) sfx.enemyShot();
+        else sfx.shot();
       }
     }
     if (!first) {
       for (const [id, b] of this.prevBullets) {
         if (bullets.has(id)) continue;
         const inside = b.x > 2 && b.y > 2 && b.x < SIM.arenaW - 2 && b.y < SIM.arenaH - 2;
-        if (b.ttl > 2 && inside) this.fx.burst(b.x, b.y, b.color, 6, 200, 220, 2.5);
+        if (b.ttl > 2 && inside) {
+          this.fx.burst(b.x, b.y, b.color, 6, 200, 220, 2.5);
+          sfx.hit();
+        }
       }
     }
     this.prevBullets = bullets;
@@ -200,19 +244,25 @@ export class ArenaScene extends Phaser.Scene {
             this.fx.burst(p.x, p.y, color, 36, 340, 700, 4, 0.94);
             this.fx.ring(p.x, p.y, color, 110, 500, 5);
             this.fx.shake(8, 320);
+            sfx.down();
           } else {
             this.fx.ring(p.x, p.y, 0xff5252, 40, 220, 2);
             this.fx.shake(p.id === this.sync.localId ? 3 : 1.5, 110);
+            if (p.id === this.sync.localId) sfx.hurt();
           }
         } else if (p.hp > prevHp && prevHp > 0) {
           this.fx.burst(p.x, p.y, 0x69f0ae, 12, 120, 400, 2.5);
+          sfx.pickup();
         } else if (p.hp > 0 && prevHp <= 0) {
           this.fx.ring(p.x, p.y, 0x69f0ae, 90, 500, 4);
           this.fx.burst(p.x, p.y, 0x69f0ae, 24, 200, 500, 3);
+          sfx.revive();
         }
+        if (p.hp > 0 && p.dashTicks > 0 && this.prevDash[p.id] === 0) sfx.dash();
       }
       if (p.hp > 0 && p.dashTicks > 0) this.fx.ghost(p.x, p.y, SIM.playerRadius * 1.1, color);
       this.prevHp[p.id] = p.hp;
+      this.prevDash[p.id] = p.dashTicks;
     }
 
     const coop = rs.coop;
@@ -231,6 +281,7 @@ export class ArenaScene extends Phaser.Scene {
           this.fx.burst(prev.x, prev.y, spec.color, 10 + spec.radius, 260, 520, 3.5, 0.93);
           this.fx.ring(prev.x, prev.y, 0xffffff, spec.radius + 30, 320, 3);
           this.fx.shake(prev.kind === 2 ? 6 : 2.5, 150);
+          sfx.explode(prev.kind === 2);
         }
         for (const id of this.prevPickups) {
           if (coop.pickups.some((pk) => pk.id === id)) continue;
@@ -245,9 +296,16 @@ export class ArenaScene extends Phaser.Scene {
           this.fx.ring(COOP.coreX, COOP.coreY, 0xff5252, COOP.coreRadius + 30, 300, 4);
           this.fx.shake(4, 160);
           this.flashUntil.set('core', now + FLASH_MS);
+          sfx.coreHit();
         }
-        if (coop.phase === 1 && this.prevPhase === 0) this.showWaveText(`WAVE ${coop.wave}`);
-        if (coop.phase === 0 && this.prevPhase === 2) this.showWaveText('WAVE CLEAR');
+        if (coop.phase === 1 && this.prevPhase === 0) {
+          this.showWaveText(`WAVE ${coop.wave}`);
+          sfx.wave();
+        }
+        if (coop.phase === 0 && this.prevPhase === 2) {
+          this.showWaveText('WAVE CLEAR');
+          sfx.revive();
+        }
       }
       this.prevEnemies = enemies;
       this.prevPickups = new Set(coop.pickups.map((pk) => pk.id));
@@ -482,6 +540,9 @@ export class ArenaScene extends Phaser.Scene {
   private cleanup(): void {
     for (const off of this.unsubscribes) off();
     this.unsubscribes = [];
+    document.removeEventListener('visibilitychange', this.onVisibility);
+    void this.wakeLock?.release();
+    this.wakeLock = null;
     this.scale.off('resize', this.layout, this);
     this.moveStick.destroy();
     this.aimStick.destroy();

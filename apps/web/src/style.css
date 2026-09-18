@@ -23,3 +23,35 @@ body {
 #game canvas {
   display: block;
 }
+
+#rotate {
+  position: fixed;
+  inset: 0;
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  background: #0b0f1a;
+  color: #c9d1e3;
+  font: 20px system-ui, -apple-system, 'Noto Sans KR', sans-serif;
+  z-index: 10;
+}
+
+.rotate-icon {
+  font-size: 64px;
+  color: #4cc9f0;
+  animation: spin 2.4s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (orientation: portrait) and (max-width: 900px) {
+  #rotate {
+    display: flex;
+  }
+}
