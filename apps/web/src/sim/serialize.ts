@@ -5,7 +5,10 @@ export const PACKET_INPUT = 0x01;
 export const PACKET_CHARACTER = 0x02;
 export const PACKET_SNAPSHOT = 0x03;
 
-export const INPUT_PACKET_SIZE = 10;
+// 입력 패킷은 최신 틱과 그 직전 틱들의 프레임을 중복 실어 손실을 재전송 없이 메운다.
+export const INPUT_REDUNDANCY = 3;
+const FRAME_BYTES = 5;
+export const INPUT_PACKET_SIZE = 1 + 4 + INPUT_REDUNDANCY * FRAME_BYTES;
 
 const BIT_FIRE = 1 << 0;
 const BIT_DASH = 1 << 1;
@@ -16,34 +19,51 @@ function quantize(v: number): number {
   return Math.round(c * 127);
 }
 
-export function encodeInput(tick: number, f: InputFrame, out = new Uint8Array(INPUT_PACKET_SIZE)): Uint8Array {
-  const view = new DataView(out.buffer, out.byteOffset, INPUT_PACKET_SIZE);
+export interface TickedInput {
+  tick: number;
+  frame: InputFrame;
+}
+
+// frames[0]이 `tick`의 입력, frames[i]는 `tick - i`의 입력. 부족하면 마지막 것을 반복한다.
+export function encodeInput(tick: number, frames: readonly InputFrame[]): Uint8Array {
+  const out = new Uint8Array(INPUT_PACKET_SIZE);
+  const view = new DataView(out.buffer);
   view.setUint8(0, PACKET_INPUT);
   view.setUint32(1, tick >>> 0);
-  view.setInt8(5, quantize(f.moveX));
-  view.setInt8(6, quantize(f.moveY));
-  view.setInt8(7, quantize(f.aimX));
-  view.setInt8(8, quantize(f.aimY));
-  view.setUint8(9, (f.fire ? BIT_FIRE : 0) | (f.dash ? BIT_DASH : 0) | (f.skill ? BIT_SKILL : 0));
+  for (let i = 0; i < INPUT_REDUNDANCY; i++) {
+    const f = frames[Math.min(i, frames.length - 1)]!;
+    const o = 5 + i * FRAME_BYTES;
+    view.setInt8(o, quantize(f.moveX));
+    view.setInt8(o + 1, quantize(f.moveY));
+    view.setInt8(o + 2, quantize(f.aimX));
+    view.setInt8(o + 3, quantize(f.aimY));
+    view.setUint8(o + 4, (f.fire ? BIT_FIRE : 0) | (f.dash ? BIT_DASH : 0) | (f.skill ? BIT_SKILL : 0));
+  }
   return out;
 }
 
-export function decodeInput(buf: Uint8Array): { tick: number; frame: InputFrame } | null {
+export function decodeInput(buf: Uint8Array): TickedInput[] | null {
   if (buf.byteLength < INPUT_PACKET_SIZE || buf[0] !== PACKET_INPUT) return null;
   const view = new DataView(buf.buffer, buf.byteOffset, INPUT_PACKET_SIZE);
-  const bits = view.getUint8(9);
-  return {
-    tick: view.getUint32(1),
-    frame: {
-      moveX: view.getInt8(5) / 127,
-      moveY: view.getInt8(6) / 127,
-      aimX: view.getInt8(7) / 127,
-      aimY: view.getInt8(8) / 127,
-      fire: (bits & BIT_FIRE) !== 0,
-      dash: (bits & BIT_DASH) !== 0,
-      skill: (bits & BIT_SKILL) !== 0,
-    },
-  };
+  const tick = view.getUint32(1);
+  const result: TickedInput[] = [];
+  for (let i = 0; i < INPUT_REDUNDANCY; i++) {
+    const o = 5 + i * FRAME_BYTES;
+    const bits = view.getUint8(o + 4);
+    result.push({
+      tick: tick - i,
+      frame: {
+        moveX: view.getInt8(o) / 127,
+        moveY: view.getInt8(o + 1) / 127,
+        aimX: view.getInt8(o + 2) / 127,
+        aimY: view.getInt8(o + 3) / 127,
+        fire: (bits & BIT_FIRE) !== 0,
+        dash: (bits & BIT_DASH) !== 0,
+        skill: (bits & BIT_SKILL) !== 0,
+      },
+    });
+  }
+  return result;
 }
 
 export function encodeCharacter(id: CharacterId): Uint8Array {
@@ -58,7 +78,7 @@ export function decodeCharacter(buf: Uint8Array): CharacterId | null {
 // snapshot: [type u8][tick u32][ackTick u32][nextBulletId u32][bulletCount u8][player x2][bullet xN]
 const SNAPSHOT_HEADER = 1 + 4 + 4 + 4 + 1;
 const PLAYER_BYTES = 1 + 4 + 4 + 2 + 4 + 1 + 1 + 1;
-const BULLET_BYTES = 4 + 1 + 4 + 4 + 4 + 4 + 1 + 1;
+const BULLET_BYTES = 4 + 1 + 4 + 4 + 4 + 4 + 4 + 1 + 1;
 const MAX_SNAPSHOT_BULLETS = 255;
 
 export interface Snapshot {
@@ -91,12 +111,13 @@ export function encodeSnapshot(state: SimState, ackTick: number): Uint8Array {
   for (const b of bullets) {
     v.setUint32(o, b.id >>> 0);
     v.setUint8(o + 4, b.owner);
-    v.setFloat32(o + 5, b.x);
-    v.setFloat32(o + 9, b.y);
-    v.setFloat32(o + 13, b.vx);
-    v.setFloat32(o + 17, b.vy);
-    v.setUint8(o + 21, b.damage);
-    v.setUint8(o + 22, b.ttl);
+    v.setUint32(o + 5, b.spawnTick >>> 0);
+    v.setFloat32(o + 9, b.x);
+    v.setFloat32(o + 13, b.y);
+    v.setFloat32(o + 17, b.vx);
+    v.setFloat32(o + 21, b.vy);
+    v.setUint8(o + 25, b.damage);
+    v.setUint8(o + 26, b.ttl);
     o += BULLET_BYTES;
   }
   return buf;
@@ -132,12 +153,14 @@ export function decodeSnapshot(buf: Uint8Array): Snapshot | null {
     bullets.push({
       id: v.getUint32(o),
       owner: v.getUint8(o + 4) as 0 | 1,
-      x: v.getFloat32(o + 5),
-      y: v.getFloat32(o + 9),
-      vx: v.getFloat32(o + 13),
-      vy: v.getFloat32(o + 17),
-      damage: v.getUint8(o + 21),
-      ttl: v.getUint8(o + 22),
+      spawnTick: v.getUint32(o + 5),
+      lagTicks: 0,
+      x: v.getFloat32(o + 9),
+      y: v.getFloat32(o + 13),
+      vx: v.getFloat32(o + 17),
+      vy: v.getFloat32(o + 21),
+      damage: v.getUint8(o + 25),
+      ttl: v.getUint8(o + 26),
     });
     o += BULLET_BYTES;
   }

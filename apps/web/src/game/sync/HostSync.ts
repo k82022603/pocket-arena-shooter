@@ -1,13 +1,16 @@
 import type { Channel, Transport } from '../../net/transport';
 import type { CharacterId } from '../../sim/characters';
 import { createInitialState, setPlayerCharacter, step, winnerOf } from '../../sim/core';
+import { PositionHistory } from '../../sim/history';
 import { decodeCharacter, decodeInput, encodeCharacter, encodeSnapshot } from '../../sim/serialize';
-import { EMPTY_INPUT, type InputFrame, type SimState } from '../../sim/types';
-import { monotonicTick, type GameSync, type RenderState } from './GameSync';
+import { EMPTY_INPUT, SIM, type InputFrame, type SimState } from '../../sim/types';
+import { INTERP_DELAY_TICKS, monotonicTick, type GameSync, type RenderState } from './GameSync';
 
 const SNAPSHOT_INTERVAL_TICKS = 3;
 // 게스트 입력을 이 이상 쌓아두지 않는다 (60Hz 기준 100ms). 넘치면 오래된 것부터 버려 지연을 묶는다.
 const MAX_QUEUED_INPUTS = 6;
+// 게스트 탄환 판정 되감기 상한. 게스트는 RTT/2 + 보간 지연만큼 과거의 호스트를 보고 쏜다.
+const MAX_LAG_TICKS = 12;
 
 interface QueuedInput {
   tick: number;
@@ -19,9 +22,11 @@ export class HostSync implements GameSync {
   readonly localId = 0 as const;
 
   private readonly state: SimState;
+  private readonly history = new PositionHistory();
   private readonly queue: QueuedInput[] = [];
   private lastGuestInput: InputFrame = EMPTY_INPUT;
   private ackTick = 0;
+  private lagTicks = 0;
   private finished = false;
   private droppedInputs = 0;
 
@@ -41,8 +46,8 @@ export class HostSync implements GameSync {
       return;
     }
     const decoded = decodeInput(bytes);
-    if (!decoded || decoded.tick <= this.ackTick) return;
-    this.enqueue(decoded);
+    if (!decoded) return;
+    for (const input of decoded) if (input.tick > this.ackTick) this.enqueue(input);
   }
 
   private enqueue(input: QueuedInput): void {
@@ -63,7 +68,15 @@ export class HostSync implements GameSync {
       this.lastGuestInput = next.frame;
       this.ackTick = next.tick;
     }
-    step(this.state, [local, this.lastGuestInput]);
+    this.lagTicks = Math.min(
+      MAX_LAG_TICKS,
+      Math.round((this.transport.rtt / 2 / 1000) * SIM.tickRate) + INTERP_DELAY_TICKS,
+    );
+    step(this.state, [local, this.lastGuestInput], {
+      inputTicks: [this.state.tick + 1, this.ackTick],
+      bulletLag: [0, this.lagTicks],
+      history: this.history,
+    });
 
     if (winnerOf(this.state) !== null) {
       this.finished = true;
@@ -84,6 +97,6 @@ export class HostSync implements GameSync {
   }
 
   debugInfo(): string {
-    return `queue ${this.queue.length} drop ${this.droppedInputs}`;
+    return `queue ${this.queue.length} drop ${this.droppedInputs} rewind ${this.lagTicks}t`;
   }
 }

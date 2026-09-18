@@ -1,5 +1,14 @@
 import { CHARACTERS, type CharacterId } from './characters';
-import { SIM, type InputFrame, type PlayerState, type SimState } from './types';
+import type { PositionHistory } from './history';
+import { SIM, type BulletState, type InputFrame, type PlayerState, type SimState } from './types';
+
+export interface StepOptions {
+  // 각 플레이어의 이번 틱 입력에 붙은 틱 번호 (탄환 spawnTick). 기본은 시뮬레이션 틱.
+  inputTicks?: readonly [number, number];
+  // 각 플레이어가 쏜 탄환의 판정 되감기 틱 수.
+  bulletLag?: readonly [number, number];
+  history?: PositionHistory;
+}
 
 export function createInitialState(characters: readonly [CharacterId, CharacterId]): SimState {
   return {
@@ -32,17 +41,22 @@ export function setPlayerCharacter(state: SimState, id: 0 | 1, character: Charac
   if (wasFull) p.hp = CHARACTERS[character].stats.maxHp;
 }
 
-export function step(state: SimState, inputs: readonly [InputFrame, InputFrame]): void {
+export function step(state: SimState, inputs: readonly [InputFrame, InputFrame], opts: StepOptions = {}): void {
   state.tick += 1;
+  const inputTicks = opts.inputTicks ?? [state.tick, state.tick];
+  const lag = opts.bulletLag ?? [0, 0];
   for (const p of state.players) {
     if (p.hp <= 0) continue;
     applyPlayerInput(p, inputs[p.id]);
-    tryFire(state, p, inputs[p.id]);
+    if (consumeFire(p, inputs[p.id])) {
+      state.bullets.push(makeBullet(p, state.nextBulletId++, inputTicks[p.id], lag[p.id]));
+    }
   }
-  stepBullets(state);
+  opts.history?.record(state.tick, state.players);
+  stepBullets(state, opts.history);
 }
 
-// 이동·조준·대시·쿨다운만 진행한다. 발사는 호스트 권위이므로 게스트 예측에서는 호출하지 않는다.
+// 이동·조준·대시·쿨다운만 진행한다. 발사는 consumeFire/makeBullet으로 분리해 게스트 예측에서 재사용한다.
 export function applyPlayerInput(p: PlayerState, input: InputFrame): void {
   if (p.hp <= 0) return;
   const stats = CHARACTERS[p.character].stats;
@@ -65,38 +79,53 @@ export function applyPlayerInput(p: PlayerState, input: InputFrame): void {
   if (Math.hypot(input.aimX, input.aimY) > 0) p.aimAngle = Math.atan2(input.aimY, input.aimX);
 }
 
-function tryFire(state: SimState, p: PlayerState, input: InputFrame): void {
-  if (!input.fire || p.fireCooldown > 0) return;
-  const stats = CHARACTERS[p.character].stats;
-  p.fireCooldown = stats.fireIntervalTicks;
+export function consumeFire(p: PlayerState, input: InputFrame): boolean {
+  if (p.hp <= 0 || !input.fire || p.fireCooldown > 0) return false;
+  p.fireCooldown = CHARACTERS[p.character].stats.fireIntervalTicks;
+  return true;
+}
+
+export function makeBullet(p: PlayerState, id: number, spawnTick: number, lagTicks: number): BulletState {
   const dx = Math.cos(p.aimAngle);
   const dy = Math.sin(p.aimAngle);
-  state.bullets.push({
-    id: state.nextBulletId++,
+  return {
+    id,
     owner: p.id,
+    spawnTick,
+    lagTicks,
     x: p.x + dx * (SIM.playerRadius + SIM.bulletRadius),
     y: p.y + dy * (SIM.playerRadius + SIM.bulletRadius),
     vx: dx * SIM.bulletSpeed,
     vy: dy * SIM.bulletSpeed,
-    damage: stats.damage,
+    damage: CHARACTERS[p.character].stats.damage,
     ttl: SIM.bulletTtl,
-  });
+  };
 }
 
-function stepBullets(state: SimState): void {
-  const alive: SimState['bullets'] = [];
+// 탄환을 한 틱 전진시키고, 수명·경계 안에 남아 있으면 true.
+export function advanceBullet(b: BulletState): boolean {
+  b.x += b.vx * SIM.dt;
+  b.y += b.vy * SIM.dt;
+  b.ttl -= 1;
+  return b.ttl > 0 && b.x >= 0 && b.y >= 0 && b.x <= SIM.arenaW && b.y <= SIM.arenaH;
+}
+
+export function bulletHits(b: BulletState, tx: number, ty: number): boolean {
+  return Math.hypot(tx - b.x, ty - b.y) < SIM.playerRadius + SIM.bulletRadius;
+}
+
+function stepBullets(state: SimState, history?: PositionHistory): void {
+  const alive: BulletState[] = [];
   for (const b of state.bullets) {
-    b.x += b.vx * SIM.dt;
-    b.y += b.vy * SIM.dt;
-    b.ttl -= 1;
-    if (b.ttl <= 0 || b.x < 0 || b.y < 0 || b.x > SIM.arenaW || b.y > SIM.arenaH) continue;
+    if (!advanceBullet(b)) continue;
 
     const target = state.players[b.owner === 0 ? 1 : 0];
-    const hit =
-      target.hp > 0 &&
-      target.dashTicks === 0 &&
-      Math.hypot(target.x - b.x, target.y - b.y) < SIM.playerRadius + SIM.bulletRadius;
-    if (hit) {
+    const pose = b.lagTicks > 0 ? history?.lookup(target.id, state.tick - b.lagTicks) : null;
+    const tx = pose?.x ?? target.x;
+    const ty = pose?.y ?? target.y;
+    const invulnerable = (pose?.dashTicks ?? target.dashTicks) > 0;
+
+    if (target.hp > 0 && !invulnerable && bulletHits(b, tx, ty)) {
       target.hp = Math.max(0, target.hp - b.damage);
       continue;
     }

@@ -35,6 +35,10 @@ export interface PlayerState {
 export interface BulletState {
   id: number;
   owner: 0 | 1;
+  // 발사를 일으킨 소유자의 입력 틱. 게스트가 예측 탄환과 권위 탄환을 대조하는 키.
+  spawnTick: number;
+  // 판정 시 상대 위치를 이만큼 과거로 되감는다 (호스트 전용, 전송하지 않음).
+  lagTicks: number;
   x: number;
   y: number;
   vx: number;
