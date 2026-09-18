@@ -1,4 +1,5 @@
 import { CHARACTERS } from './characters';
+import { damagePlayer } from './core';
 import { xorshift32 } from './prng';
 import {
   COOP,
@@ -175,7 +176,7 @@ function stepEnemies(state: SimState, coop: CoopState): void {
     if (dist <= reach && e.contactCooldown === 0) {
       e.contactCooldown = spec.contactIntervalTicks;
       if (target.player) {
-        if (target.player.dashTicks === 0) target.player.hp = Math.max(0, target.player.hp - spec.contactDamage);
+        if (target.player.dashTicks === 0) damagePlayer(state, target.player, spec.contactDamage);
       } else {
         coop.coreHp = Math.max(0, coop.coreHp - spec.contactDamage);
       }

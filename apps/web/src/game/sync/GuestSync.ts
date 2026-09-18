@@ -8,6 +8,8 @@ import {
   createInitialState,
   makeBullet,
   outcomeOf,
+  summarize,
+  type MatchSummary,
   type Outcome,
 } from '../../sim/core';
 import { INPUT_REDUNDANCY, decodeSnapshot, encodeCharacter, encodeInput, type Snapshot } from '../../sim/serialize';
@@ -214,6 +216,11 @@ export class GuestSync implements GameSync {
   outcome(): Outcome | null {
     const latest = this.snapshots[this.snapshots.length - 1];
     return latest ? outcomeOf(latest.state) : null;
+  }
+
+  summary(): MatchSummary | null {
+    const latest = this.snapshots[this.snapshots.length - 1];
+    return latest ? summarize(latest.state) : null;
   }
 
   debugInfo(): string {

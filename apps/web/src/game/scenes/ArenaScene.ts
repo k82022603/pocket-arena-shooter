@@ -175,7 +175,12 @@ export class ArenaScene extends Phaser.Scene {
       this.sync.step(this.readLocalInput());
       const outcome = this.sync.outcome();
       if (outcome !== null) {
-        this.scene.start('Result', { outcome, localId: this.sync.localId, session: this.session });
+        this.scene.start('Result', {
+          outcome,
+          summary: this.sync.summary(),
+          localId: this.sync.localId,
+          session: this.session,
+        });
         return;
       }
     }

@@ -1,5 +1,5 @@
 import { characterAt, characterIndex, type CharacterId } from '../../sim/characters';
-import { createInitialState, outcomeOf, step, type Outcome } from '../../sim/core';
+import { createInitialState, outcomeOf, step, summarize, type MatchSummary, type Outcome } from '../../sim/core';
 import { EMPTY_INPUT, type GameMode, type InputFrame, type SimState } from '../../sim/types';
 import type { GameSync, RenderState } from './GameSync';
 
@@ -28,6 +28,10 @@ export class SoloSync implements GameSync {
 
   outcome(): Outcome | null {
     return outcomeOf(this.state);
+  }
+
+  summary(): MatchSummary {
+    return summarize(this.state);
   }
 
   debugInfo(): string {

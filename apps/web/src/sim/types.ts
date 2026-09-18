@@ -88,12 +88,29 @@ export interface CoopState {
   pickupTimer: number;
 }
 
+export interface PlayerStats {
+  shots: number;
+  hits: number;
+  damageDealt: number;
+  damageTaken: number;
+  kills: number;
+  dashes: number;
+  downs: number;
+}
+
+export function emptyStats(): PlayerStats {
+  return { shots: 0, hits: 0, damageDealt: 0, damageTaken: 0, kills: 0, dashes: 0, downs: 0 };
+}
+
 export interface SimState {
   mode: GameMode;
   playerCount: 1 | 2;
   tick: number;
+  // 라운드 시작 후 진행한 틱 수 (tick은 단조 기준값에서 시작하므로 따로 센다)
+  elapsed: number;
   rngState: number;
   players: [PlayerState, PlayerState];
+  stats: [PlayerStats, PlayerStats];
   bullets: BulletState[];
   nextBulletId: number;
   coop: CoopState | null;

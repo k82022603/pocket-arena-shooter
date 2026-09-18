@@ -6,10 +6,12 @@ import {
   ENEMIES,
   ENEMY_OWNER,
   SIM,
+  emptyStats,
   type BulletState,
   type GameMode,
   type InputFrame,
   type PlayerState,
+  type PlayerStats,
   type SimState,
 } from './types';
 
@@ -35,8 +37,10 @@ export function createInitialState(
     mode: opts.mode,
     playerCount: opts.playerCount,
     tick: 0,
+    elapsed: 0,
     rngState: opts.seed >>> 0 || 1,
     players: [spawnPlayer(0, characters[0], opts.mode), spawnPlayer(1, characters[1], opts.mode)],
+    stats: [emptyStats(), emptyStats()],
     bullets: [],
     nextBulletId: 1,
     coop: opts.mode === 'coop' ? createCoopState() : null,
@@ -69,12 +73,16 @@ export function setPlayerCharacter(state: SimState, id: 0 | 1, character: Charac
 
 export function step(state: SimState, inputs: readonly [InputFrame, InputFrame], opts: StepOptions = {}): void {
   state.tick += 1;
+  state.elapsed += 1;
   const inputTicks = opts.inputTicks ?? [state.tick, state.tick];
   const lag = opts.bulletLag ?? [0, 0];
   for (const p of activePlayers(state)) {
     if (p.hp <= 0) continue;
+    const stats = CHARACTERS[p.character].stats;
     applyPlayerInput(p, inputs[p.id]);
+    if (p.dashTicks === stats.dashTicks && p.dashCooldown === stats.dashCooldownTicks) state.stats[p.id].dashes += 1;
     if (consumeFire(p, inputs[p.id])) {
+      state.stats[p.id].shots += 1;
       state.bullets.push(makeBullet(p, state.nextBulletId++, inputTicks[p.id], lag[p.id]));
     }
   }
@@ -153,6 +161,17 @@ function stepBullets(state: SimState, history?: PositionHistory): void {
   state.bullets = alive;
 }
 
+// 플레이어에게 피해를 주고 통계에 반영한다. 실제로 깎인 양을 돌려준다.
+export function damagePlayer(state: SimState, target: PlayerState, amount: number): number {
+  const dealt = Math.min(target.hp, amount);
+  if (dealt <= 0) return 0;
+  target.hp -= dealt;
+  const stats = state.stats[target.id];
+  stats.damageTaken += dealt;
+  if (target.hp <= 0) stats.downs += 1;
+  return dealt;
+}
+
 function duelBulletHit(state: SimState, b: BulletState, history?: PositionHistory): boolean {
   const target = state.players[b.owner === 0 ? 1 : 0];
   const pose = b.lagTicks > 0 ? history?.lookup(target.id, state.tick - b.lagTicks) : null;
@@ -160,7 +179,10 @@ function duelBulletHit(state: SimState, b: BulletState, history?: PositionHistor
   const ty = pose?.y ?? target.y;
   const invulnerable = (pose?.dashTicks ?? target.dashTicks) > 0;
   if (target.hp > 0 && !invulnerable && bulletHits(b, tx, ty)) {
-    target.hp = Math.max(0, target.hp - b.damage);
+    const dealt = damagePlayer(state, target, b.damage);
+    const shooter = state.stats[b.owner as 0 | 1];
+    shooter.hits += 1;
+    shooter.damageDealt += dealt;
     return true;
   }
   return false;
@@ -171,7 +193,12 @@ function coopBulletHit(state: SimState, b: BulletState): boolean {
   if (!coop) return false;
   for (const e of coop.enemies) {
     if (e.hp > 0 && bulletHits(b, e.x, e.y, ENEMIES[e.kind].radius)) {
-      e.hp = Math.max(0, e.hp - b.damage);
+      const dealt = Math.min(e.hp, b.damage);
+      e.hp -= dealt;
+      const shooter = state.stats[b.owner as 0 | 1];
+      shooter.hits += 1;
+      shooter.damageDealt += dealt;
+      if (e.hp <= 0) shooter.kills += 1;
       return true;
     }
   }
@@ -181,7 +208,7 @@ function coopBulletHit(state: SimState, b: BulletState): boolean {
 function enemyBulletHit(state: SimState, b: BulletState): boolean {
   for (const p of activePlayers(state)) {
     if (p.hp > 0 && p.dashTicks === 0 && bulletHits(b, p.x, p.y)) {
-      p.hp = Math.max(0, p.hp - b.damage);
+      damagePlayer(state, p, b.damage);
       return true;
     }
   }
@@ -194,6 +221,27 @@ function enemyBulletHit(state: SimState, b: BulletState): boolean {
 }
 
 export type Outcome = { mode: 'duel'; winner: 0 | 1 } | { mode: 'coop'; won: boolean; wave: number };
+
+export interface MatchSummary {
+  mode: GameMode;
+  playerCount: 1 | 2;
+  elapsedTicks: number;
+  players: [{ character: CharacterId; stats: PlayerStats }, { character: CharacterId; stats: PlayerStats }];
+  coop: { wave: number; coreHp: number } | null;
+}
+
+export function summarize(state: SimState): MatchSummary {
+  return {
+    mode: state.mode,
+    playerCount: state.playerCount,
+    elapsedTicks: state.elapsed,
+    players: [
+      { character: state.players[0].character, stats: { ...state.stats[0] } },
+      { character: state.players[1].character, stats: { ...state.stats[1] } },
+    ],
+    coop: state.coop ? { wave: state.coop.wave, coreHp: state.coop.coreHp } : null,
+  };
+}
 
 export function outcomeOf(state: SimState): Outcome | null {
   if (state.mode === 'duel') {

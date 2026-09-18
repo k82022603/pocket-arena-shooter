@@ -1,6 +1,6 @@
 import type { Channel, Transport } from '../../net/transport';
 import type { CharacterId } from '../../sim/characters';
-import { createInitialState, outcomeOf, setPlayerCharacter, step, type Outcome } from '../../sim/core';
+import { createInitialState, outcomeOf, setPlayerCharacter, step, summarize, type MatchSummary, type Outcome } from '../../sim/core';
 import { PositionHistory } from '../../sim/history';
 import { decodeCharacter, decodeInput, encodeCharacter, encodeSnapshot } from '../../sim/serialize';
 import { EMPTY_INPUT, SIM, type GameMode, type InputFrame, type SimState } from '../../sim/types';
@@ -95,6 +95,10 @@ export class HostSync implements GameSync {
 
   outcome(): Outcome | null {
     return outcomeOf(this.state);
+  }
+
+  summary(): MatchSummary {
+    return summarize(this.state);
   }
 
   debugInfo(): string {

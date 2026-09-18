@@ -1,5 +1,5 @@
 import type { Channel } from '../../net/transport';
-import type { Outcome } from '../../sim/core';
+import type { MatchSummary, Outcome } from '../../sim/core';
 import { SIM, type InputFrame, type SimState } from '../../sim/types';
 
 export type RenderState = Pick<SimState, 'tick' | 'mode' | 'playerCount' | 'players' | 'bullets' | 'coop'>;
@@ -11,6 +11,7 @@ export interface GameSync {
   handleMessage(channel: Channel, bytes: Uint8Array): void;
   renderState(nowMs: number): RenderState;
   outcome(): Outcome | null;
+  summary(): MatchSummary | null;
   debugInfo(): string;
 }
 

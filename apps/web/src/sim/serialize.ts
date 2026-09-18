@@ -8,6 +8,7 @@ import type {
   InputFrame,
   PickupState,
   PlayerState,
+  PlayerStats,
   SimState,
   WavePhase,
 } from './types';
@@ -141,9 +142,11 @@ class Reader {
   }
 }
 
-// snapshot: header, player x2, bullet xN, (coop) core/wave, enemy xM, pickup xK
-const HEADER_BYTES = 1 + 4 + 4 + 4 + 1 + 1 + 1 + 1;
+// snapshot: header, player x2, stats x2, bullet xN, (coop) core/wave, enemy xM, pickup xK
+const HEADER_BYTES = 1 + 4 + 4 + 4 + 4 + 1 + 1 + 1 + 1;
 const PLAYER_BYTES = 1 + 4 + 4 + 2 + 4 + 1 + 1 + 1 + 1;
+const STATS_FIELDS: (keyof PlayerStats)[] = ['shots', 'hits', 'damageDealt', 'damageTaken', 'kills', 'dashes', 'downs'];
+const STATS_BYTES = STATS_FIELDS.length * 4;
 const BULLET_BYTES = 4 + 1 + 4 + 4 + 4 + 4 + 4 + 1 + 1;
 const COOP_BYTES = 2 + 1 + 1 + 2 + 4 + 1 + 1;
 const ENEMY_BYTES = 4 + 1 + 4 + 4 + 2;
@@ -162,7 +165,7 @@ export function encodeSnapshot(state: SimState, ackTick: number): Uint8Array {
   const pickups = coop ? coop.pickups.slice(0, MAX_LIST) : [];
   const size =
     HEADER_BYTES +
-    2 * PLAYER_BYTES +
+    2 * (PLAYER_BYTES + STATS_BYTES) +
     bullets.length * BULLET_BYTES +
     (coop ? COOP_BYTES + enemies.length * ENEMY_BYTES + pickups.length * PICKUP_BYTES : 0);
   const w = new Writer(new Uint8Array(size));
@@ -171,6 +174,7 @@ export function encodeSnapshot(state: SimState, ackTick: number): Uint8Array {
   w.u32(state.tick);
   w.u32(ackTick);
   w.u32(state.nextBulletId);
+  w.u32(state.elapsed);
   w.u8(state.mode === 'coop' ? 1 : 0);
   w.u8(state.playerCount);
   w.u8(bullets.length);
@@ -187,6 +191,7 @@ export function encodeSnapshot(state: SimState, ackTick: number): Uint8Array {
     w.u8(p.dashCooldown);
     w.u8(p.reviveProgress);
   }
+  for (const s of state.stats) for (const field of STATS_FIELDS) w.u32(s[field]);
   for (const b of bullets) {
     w.u32(b.id);
     w.u8(b.owner);
@@ -223,17 +228,18 @@ export function encodeSnapshot(state: SimState, ackTick: number): Uint8Array {
 }
 
 export function decodeSnapshot(buf: Uint8Array): Snapshot | null {
-  if (buf.byteLength < HEADER_BYTES + 2 * PLAYER_BYTES || buf[0] !== PACKET_SNAPSHOT) return null;
+  if (buf.byteLength < HEADER_BYTES + 2 * (PLAYER_BYTES + STATS_BYTES) || buf[0] !== PACKET_SNAPSHOT) return null;
   const r = new Reader(buf);
   r.u8();
   const tick = r.u32();
   const ackTick = r.u32();
   const nextBulletId = r.u32();
+  const elapsed = r.u32();
   const mode = r.u8() === 1 ? 'coop' : 'duel';
   const playerCount = r.u8() === 1 ? 1 : 2;
   const bulletCount = r.u8();
   r.u8();
-  if (r.remaining < 2 * PLAYER_BYTES + bulletCount * BULLET_BYTES) return null;
+  if (r.remaining < 2 * (PLAYER_BYTES + STATS_BYTES) + bulletCount * BULLET_BYTES) return null;
 
   const players: PlayerState[] = [];
   for (let id = 0 as 0 | 1; id < 2; id = (id + 1) as 0 | 1) {
@@ -249,6 +255,12 @@ export function decodeSnapshot(buf: Uint8Array): Snapshot | null {
       dashCooldown: r.u8(),
       reviveProgress: r.u8(),
     });
+  }
+  const stats: PlayerStats[] = [];
+  for (let i = 0; i < 2; i++) {
+    const s: PlayerStats = { shots: 0, hits: 0, damageDealt: 0, damageTaken: 0, kills: 0, dashes: 0, downs: 0 };
+    for (const field of STATS_FIELDS) s[field] = r.u32();
+    stats.push(s);
   }
   const bullets: BulletState[] = [];
   for (let i = 0; i < bulletCount; i++) {
@@ -301,8 +313,10 @@ export function decodeSnapshot(buf: Uint8Array): Snapshot | null {
       mode,
       playerCount,
       tick,
+      elapsed,
       rngState: 0,
       players: players as [PlayerState, PlayerState],
+      stats: stats as [PlayerStats, PlayerStats],
       bullets,
       nextBulletId,
       coop,
