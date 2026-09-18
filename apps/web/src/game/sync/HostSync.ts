@@ -1,9 +1,9 @@
 import type { Channel, Transport } from '../../net/transport';
 import type { CharacterId } from '../../sim/characters';
-import { createInitialState, setPlayerCharacter, step, winnerOf } from '../../sim/core';
+import { createInitialState, outcomeOf, setPlayerCharacter, step, type Outcome } from '../../sim/core';
 import { PositionHistory } from '../../sim/history';
 import { decodeCharacter, decodeInput, encodeCharacter, encodeSnapshot } from '../../sim/serialize';
-import { EMPTY_INPUT, SIM, type InputFrame, type SimState } from '../../sim/types';
+import { EMPTY_INPUT, SIM, type GameMode, type InputFrame, type SimState } from '../../sim/types';
 import { INTERP_DELAY_TICKS, monotonicTick, type GameSync, type RenderState } from './GameSync';
 
 const SNAPSHOT_INTERVAL_TICKS = 3;
@@ -33,8 +33,9 @@ export class HostSync implements GameSync {
   constructor(
     private readonly transport: Transport,
     local: CharacterId,
+    mode: GameMode,
   ) {
-    this.state = createInitialState([local, local]);
+    this.state = createInitialState([local, local], { mode, playerCount: 2, seed: Date.now() });
     this.state.tick = monotonicTick();
     transport.send('event', encodeCharacter(local));
   }
@@ -78,7 +79,7 @@ export class HostSync implements GameSync {
       history: this.history,
     });
 
-    if (winnerOf(this.state) !== null) {
+    if (outcomeOf(this.state) !== null) {
       this.finished = true;
       this.transport.send('event', encodeSnapshot(this.state, this.ackTick));
       return;
@@ -92,8 +93,8 @@ export class HostSync implements GameSync {
     return this.state;
   }
 
-  winner(): 0 | 1 | null {
-    return winnerOf(this.state);
+  outcome(): Outcome | null {
+    return outcomeOf(this.state);
   }
 
   debugInfo(): string {

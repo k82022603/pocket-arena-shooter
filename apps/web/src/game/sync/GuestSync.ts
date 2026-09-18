@@ -1,8 +1,17 @@
 import type { Channel, Transport } from '../../net/transport';
 import { CHARACTERS, type CharacterId } from '../../sim/characters';
-import { advanceBullet, applyPlayerInput, bulletHits, consumeFire, createInitialState, makeBullet, winnerOf } from '../../sim/core';
+import {
+  advanceBullet,
+  applyPlayerInput,
+  bulletHits,
+  consumeFire,
+  createInitialState,
+  makeBullet,
+  outcomeOf,
+  type Outcome,
+} from '../../sim/core';
 import { INPUT_REDUNDANCY, decodeSnapshot, encodeCharacter, encodeInput, type Snapshot } from '../../sim/serialize';
-import { SIM, type BulletState, type InputFrame, type PlayerState, type SimState } from '../../sim/types';
+import { ENEMIES, SIM, type BulletState, type EnemyState, type InputFrame, type PlayerState, type SimState } from '../../sim/types';
 import { INTERP_DELAY_TICKS, monotonicTick, type GameSync, type RenderState } from './GameSync';
 
 const MAX_SNAPSHOTS = 32;
@@ -33,7 +42,7 @@ export class GuestSync implements GameSync {
   private predictedBullets: PredictedBullet[] = [];
   private readonly snapshots: ReceivedSnapshot[] = [];
   private readonly placeholder: SimState;
-  private remoteRender: PlayerState | null = null;
+  private lastRender: RenderState | null = null;
   private corrections = 0;
   private rejectedShots = 0;
 
@@ -119,19 +128,27 @@ export class GuestSync implements GameSync {
       this.predictedBullets.push({ ...makeBullet(this.predicted, -this.localTick, this.localTick, 0), authTick: null });
     }
 
-    const remote = this.remoteRender;
+    const render = this.lastRender;
     this.predictedBullets = this.predictedBullets.filter((b) => {
       if (!advanceBullet(b)) return false;
       // 호스트가 되감기로 같은 시점을 판정하므로, 화면상 명중이면 미리 지운다.
-      return !(remote && remote.hp > 0 && remote.dashTicks === 0 && bulletHits(b, remote.x, remote.y));
+      return !(render && this.visuallyHits(b, render));
     });
+  }
+
+  private visuallyHits(b: BulletState, render: RenderState): boolean {
+    if (render.mode === 'coop') {
+      return render.coop?.enemies.some((e) => bulletHits(b, e.x, e.y, ENEMIES[e.kind].radius)) ?? false;
+    }
+    const remote = render.players[0];
+    return remote.hp > 0 && remote.dashTicks === 0 && bulletHits(b, remote.x, remote.y);
   }
 
   renderState(nowMs: number): RenderState {
     const latest = this.snapshots[this.snapshots.length - 1];
     if (!latest) {
       const players: [PlayerState, PlayerState] = [this.placeholder.players[0], this.predicted];
-      return { tick: this.localTick, players, bullets: this.predictedBullets };
+      return { ...this.placeholder, tick: this.localTick, players, bullets: this.predictedBullets };
     }
 
     const estimatedHostTick = latest.state.tick + ((nowMs - latest.receivedAt) * SIM.tickRate) / 1000;
@@ -141,7 +158,6 @@ export class GuestSync implements GameSync {
     const t = span > 0 ? clamp01((renderTick - from.state.tick) / span) : 1;
 
     const remote = lerpPlayer(from.state.players[0], to.state.players[0], t);
-    this.remoteRender = remote;
     const players: [PlayerState, PlayerState] = [remote, this.predicted];
 
     const predictedTicks = new Set<number>();
@@ -157,7 +173,29 @@ export class GuestSync implements GameSync {
     }
     for (const b of this.predictedBullets) bullets.push(b);
 
-    return { tick: latest.state.tick, players, bullets };
+    let coop = to.state.coop;
+    if (coop && from.state.coop) {
+      const fromEnemies = new Map<number, EnemyState>();
+      for (const e of from.state.coop.enemies) fromEnemies.set(e.id, e);
+      coop = {
+        ...coop,
+        enemies: coop.enemies.map((e) => {
+          const prev = fromEnemies.get(e.id);
+          return prev ? { ...e, x: lerp(prev.x, e.x, t), y: lerp(prev.y, e.y, t) } : e;
+        }),
+      };
+    }
+
+    const render: RenderState = {
+      tick: latest.state.tick,
+      mode: to.state.mode,
+      playerCount: to.state.playerCount,
+      players,
+      bullets,
+      coop,
+    };
+    this.lastRender = render;
+    return render;
   }
 
   private bracket(renderTick: number): [ReceivedSnapshot, ReceivedSnapshot] {
@@ -173,9 +211,9 @@ export class GuestSync implements GameSync {
     return [from, to];
   }
 
-  winner(): 0 | 1 | null {
+  outcome(): Outcome | null {
     const latest = this.snapshots[this.snapshots.length - 1];
-    return latest ? winnerOf(latest.state) : null;
+    return latest ? outcomeOf(latest.state) : null;
   }
 
   debugInfo(): string {

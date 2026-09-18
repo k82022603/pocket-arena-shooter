@@ -1,6 +1,17 @@
 import { CHARACTERS, type CharacterId } from './characters';
+import { activePlayers, createCoopState, stepCoop } from './coop';
 import type { PositionHistory } from './history';
-import { SIM, type BulletState, type InputFrame, type PlayerState, type SimState } from './types';
+import {
+  COOP,
+  ENEMIES,
+  ENEMY_OWNER,
+  SIM,
+  type BulletState,
+  type GameMode,
+  type InputFrame,
+  type PlayerState,
+  type SimState,
+} from './types';
 
 export interface StepOptions {
   // 각 플레이어의 이번 틱 입력에 붙은 틱 번호 (탄환 spawnTick). 기본은 시뮬레이션 틱.
@@ -10,26 +21,41 @@ export interface StepOptions {
   history?: PositionHistory;
 }
 
-export function createInitialState(characters: readonly [CharacterId, CharacterId]): SimState {
+export interface CreateOptions {
+  mode: GameMode;
+  playerCount: 1 | 2;
+  seed: number;
+}
+
+export function createInitialState(
+  characters: readonly [CharacterId, CharacterId],
+  opts: CreateOptions = { mode: 'duel', playerCount: 2, seed: 1 },
+): SimState {
   return {
+    mode: opts.mode,
+    playerCount: opts.playerCount,
     tick: 0,
-    players: [spawnPlayer(0, characters[0]), spawnPlayer(1, characters[1])],
+    rngState: opts.seed >>> 0 || 1,
+    players: [spawnPlayer(0, characters[0], opts.mode), spawnPlayer(1, characters[1], opts.mode)],
     bullets: [],
     nextBulletId: 1,
+    coop: opts.mode === 'coop' ? createCoopState() : null,
   };
 }
 
-function spawnPlayer(id: 0 | 1, character: CharacterId): PlayerState {
+function spawnPlayer(id: 0 | 1, character: CharacterId, mode: GameMode): PlayerState {
+  const coopX = id === 0 ? COOP.coreX - 80 : COOP.coreX + 80;
   return {
     id,
     character,
-    x: id === 0 ? SIM.arenaW * 0.2 : SIM.arenaW * 0.8,
+    x: mode === 'coop' ? coopX : id === 0 ? SIM.arenaW * 0.2 : SIM.arenaW * 0.8,
     y: SIM.arenaH / 2,
     hp: CHARACTERS[character].stats.maxHp,
     aimAngle: id === 0 ? 0 : Math.PI,
     fireCooldown: 0,
     dashTicks: 0,
     dashCooldown: 0,
+    reviveProgress: 0,
   };
 }
 
@@ -45,7 +71,7 @@ export function step(state: SimState, inputs: readonly [InputFrame, InputFrame],
   state.tick += 1;
   const inputTicks = opts.inputTicks ?? [state.tick, state.tick];
   const lag = opts.bulletLag ?? [0, 0];
-  for (const p of state.players) {
+  for (const p of activePlayers(state)) {
     if (p.hp <= 0) continue;
     applyPlayerInput(p, inputs[p.id]);
     if (consumeFire(p, inputs[p.id])) {
@@ -54,6 +80,7 @@ export function step(state: SimState, inputs: readonly [InputFrame, InputFrame],
   }
   opts.history?.record(state.tick, state.players);
   stepBullets(state, opts.history);
+  if (state.mode === 'coop') stepCoop(state);
 }
 
 // 이동·조준·대시·쿨다운만 진행한다. 발사는 consumeFire/makeBullet으로 분리해 게스트 예측에서 재사용한다.
@@ -110,23 +137,15 @@ export function advanceBullet(b: BulletState): boolean {
   return b.ttl > 0 && b.x >= 0 && b.y >= 0 && b.x <= SIM.arenaW && b.y <= SIM.arenaH;
 }
 
-export function bulletHits(b: BulletState, tx: number, ty: number): boolean {
-  return Math.hypot(tx - b.x, ty - b.y) < SIM.playerRadius + SIM.bulletRadius;
+export function bulletHits(b: BulletState, tx: number, ty: number, targetRadius: number = SIM.playerRadius): boolean {
+  return Math.hypot(tx - b.x, ty - b.y) < targetRadius + SIM.bulletRadius;
 }
 
 function stepBullets(state: SimState, history?: PositionHistory): void {
   const alive: BulletState[] = [];
   for (const b of state.bullets) {
     if (!advanceBullet(b)) continue;
-
-    const target = state.players[b.owner === 0 ? 1 : 0];
-    const pose = b.lagTicks > 0 ? history?.lookup(target.id, state.tick - b.lagTicks) : null;
-    const tx = pose?.x ?? target.x;
-    const ty = pose?.y ?? target.y;
-    const invulnerable = (pose?.dashTicks ?? target.dashTicks) > 0;
-
-    if (target.hp > 0 && !invulnerable && bulletHits(b, tx, ty)) {
-      target.hp = Math.max(0, target.hp - b.damage);
+    if (b.owner === ENEMY_OWNER ? enemyBulletHit(state, b) : state.mode === 'coop' ? coopBulletHit(state, b) : duelBulletHit(state, b, history)) {
       continue;
     }
     alive.push(b);
@@ -134,10 +153,63 @@ function stepBullets(state: SimState, history?: PositionHistory): void {
   state.bullets = alive;
 }
 
-export function winnerOf(state: SimState): 0 | 1 | null {
-  const [p0, p1] = state.players;
-  if (p0.hp > 0 && p1.hp > 0) return null;
-  return p0.hp > 0 ? 0 : 1;
+function duelBulletHit(state: SimState, b: BulletState, history?: PositionHistory): boolean {
+  const target = state.players[b.owner === 0 ? 1 : 0];
+  const pose = b.lagTicks > 0 ? history?.lookup(target.id, state.tick - b.lagTicks) : null;
+  const tx = pose?.x ?? target.x;
+  const ty = pose?.y ?? target.y;
+  const invulnerable = (pose?.dashTicks ?? target.dashTicks) > 0;
+  if (target.hp > 0 && !invulnerable && bulletHits(b, tx, ty)) {
+    target.hp = Math.max(0, target.hp - b.damage);
+    return true;
+  }
+  return false;
+}
+
+function coopBulletHit(state: SimState, b: BulletState): boolean {
+  const coop = state.coop;
+  if (!coop) return false;
+  for (const e of coop.enemies) {
+    if (e.hp > 0 && bulletHits(b, e.x, e.y, ENEMIES[e.kind].radius)) {
+      e.hp = Math.max(0, e.hp - b.damage);
+      return true;
+    }
+  }
+  return false;
+}
+
+function enemyBulletHit(state: SimState, b: BulletState): boolean {
+  for (const p of activePlayers(state)) {
+    if (p.hp > 0 && p.dashTicks === 0 && bulletHits(b, p.x, p.y)) {
+      p.hp = Math.max(0, p.hp - b.damage);
+      return true;
+    }
+  }
+  const coop = state.coop;
+  if (coop && bulletHits(b, COOP.coreX, COOP.coreY, COOP.coreRadius)) {
+    coop.coreHp = Math.max(0, coop.coreHp - b.damage);
+    return true;
+  }
+  return false;
+}
+
+export type Outcome = { mode: 'duel'; winner: 0 | 1 } | { mode: 'coop'; won: boolean; wave: number };
+
+export function outcomeOf(state: SimState): Outcome | null {
+  if (state.mode === 'duel') {
+    const [p0, p1] = state.players;
+    if (p0.hp > 0 && p1.hp > 0) return null;
+    return { mode: 'duel', winner: p0.hp > 0 ? 0 : 1 };
+  }
+  const coop = state.coop;
+  if (!coop) return null;
+  if (coop.coreHp <= 0 || activePlayers(state).every((p) => p.hp <= 0)) {
+    return { mode: 'coop', won: false, wave: coop.wave };
+  }
+  if (coop.wave >= COOP.waves && coop.phase === 2 && coop.enemies.length === 0) {
+    return { mode: 'coop', won: true, wave: coop.wave };
+  }
+  return null;
 }
 
 function clamp(v: number, min: number, max: number): number {

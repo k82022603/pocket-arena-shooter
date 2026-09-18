@@ -1,6 +1,6 @@
 import { characterAt, characterIndex, type CharacterId } from '../../sim/characters';
-import { createInitialState, step, winnerOf } from '../../sim/core';
-import { EMPTY_INPUT, type InputFrame, type SimState } from '../../sim/types';
+import { createInitialState, outcomeOf, step, type Outcome } from '../../sim/core';
+import { EMPTY_INPUT, type GameMode, type InputFrame, type SimState } from '../../sim/types';
 import type { GameSync, RenderState } from './GameSync';
 
 export class SoloSync implements GameSync {
@@ -8,8 +8,12 @@ export class SoloSync implements GameSync {
   readonly localId = 0 as const;
   private readonly state: SimState;
 
-  constructor(local: CharacterId) {
-    this.state = createInitialState([local, characterAt(characterIndex(local) + 1)]);
+  constructor(local: CharacterId, mode: GameMode) {
+    this.state = createInitialState([local, characterAt(characterIndex(local) + 1)], {
+      mode,
+      playerCount: mode === 'coop' ? 1 : 2,
+      seed: Date.now(),
+    });
   }
 
   step(local: InputFrame): void {
@@ -22,8 +26,8 @@ export class SoloSync implements GameSync {
     return this.state;
   }
 
-  winner(): 0 | 1 | null {
-    return winnerOf(this.state);
+  outcome(): Outcome | null {
+    return outcomeOf(this.state);
   }
 
   debugInfo(): string {
