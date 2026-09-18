@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { CHARACTERS, CHARACTER_ORDER, DEFAULT_CHARACTER, characterAt, characterIndex, type CharacterId } from '../../sim/characters';
 import type { GameMode } from '../../sim/types';
+import { LOOKS, drawFatima } from '../fx/Fatima';
 import { FONT, makeButton, makeLabel } from '../ui';
 
 export const REGISTRY_CHARACTER = 'character';
@@ -22,7 +23,9 @@ export const MODE_LABEL: Record<GameMode, string> = {
 export class TitleScene extends Phaser.Scene {
   private charName!: Phaser.GameObjects.Text;
   private charRole!: Phaser.GameObjects.Text;
-  private charDot!: Phaser.GameObjects.Arc;
+  private preview!: Phaser.GameObjects.Graphics;
+  private previewX = 0;
+  private previewY = 0;
   private modeButton!: Phaser.GameObjects.Text;
 
   constructor() {
@@ -33,26 +36,55 @@ export class TitleScene extends Phaser.Scene {
     const { width, height } = this.scale;
     const cx = width / 2;
 
-    makeLabel(this, cx, height * 0.14, 'ARENA SHOOTER', 44);
-    makeLabel(this, cx, height * 0.14 + 40, '파티마와 함께, 옆 사람과 바로 붙는 2인 슈팅 (FSS 팬 게임)', 16);
+    makeLabel(this, cx, height * 0.09, 'ARENA SHOOTER', 40);
+    makeLabel(this, cx, height * 0.09 + 36, '파티마와 함께, 옆 사람과 바로 붙는 2인 슈팅 (FSS 팬 게임)', 15);
 
-    const pickY = height * 0.38;
-    this.charDot = this.add.circle(cx, pickY - 34, 16, 0xffffff);
+    // 왼쪽: 파티마 미리보기 / 오른쪽: 선택과 메뉴
+    this.previewX = width * 0.27;
+    this.previewY = height * 0.62;
+    this.preview = this.add.graphics();
+
+    const rx = width * 0.68;
+    const pickY = height * 0.36;
     this.charName = this.add
-      .text(cx, pickY, '', { fontFamily: FONT, fontSize: '30px', color: '#ffffff' })
+      .text(rx, pickY, '', { fontFamily: FONT, fontSize: '30px', color: '#ffffff' })
       .setOrigin(0.5);
-    this.charRole = makeLabel(this, cx, pickY + 30, '', 16);
-    makeButton(this, cx - 150, pickY, '◀', () => this.cycle(-1)).setFontSize(22);
-    makeButton(this, cx + 150, pickY, '▶', () => this.cycle(1)).setFontSize(22);
+    this.charRole = makeLabel(this, rx, pickY + 30, '', 16);
+    makeButton(this, rx - 150, pickY + 8, '◀', () => this.cycle(-1)).setFontSize(22);
+    makeButton(this, rx + 150, pickY + 8, '▶', () => this.cycle(1)).setFontSize(22);
     this.refreshCharacter();
 
-    this.modeButton = makeButton(this, cx, height * 0.56, '', () => this.toggleMode()).setFontSize(20);
+    this.modeButton = makeButton(this, rx, height * 0.53, '', () => this.toggleMode()).setFontSize(18);
     this.refreshMode();
 
-    const btnY = height * 0.7;
-    makeButton(this, cx, btnY, '혼자 하기', () => this.scene.start('Arena', { mode: 'solo' }));
-    makeButton(this, cx, btnY + 60, '방 만들기', () => this.scene.start('Lobby', { role: 'host' }));
-    makeButton(this, cx, btnY + 120, '참가하기', () => this.scene.start('Lobby', { role: 'guest' }));
+    const btnY = height * 0.68;
+    const step = 56;
+    makeButton(this, rx, btnY, '혼자 하기', () => this.scene.start('Arena', { mode: 'solo' })).setFontSize(24);
+    makeButton(this, rx, btnY + step, '방 만들기', () => this.scene.start('Lobby', { role: 'host' })).setFontSize(24);
+    makeButton(this, rx, btnY + step * 2, '참가하기', () => this.scene.start('Lobby', { role: 'guest' })).setFontSize(24);
+  }
+
+  update(time: number): void {
+    const id = selectedCharacter(this);
+    const look = LOOKS[id];
+    const aim = -0.35 + Math.sin(time / 900) * 0.25;
+    const g = this.preview;
+    g.clear();
+    g.fillStyle(CHARACTERS[id].color, 0.1);
+    g.fillCircle(this.previewX, this.previewY, 80);
+    g.lineStyle(2, CHARACTERS[id].color, 0.35);
+    g.strokeCircle(this.previewX, this.previewY, 80 + Math.sin(time / 500) * 3);
+    drawFatima(g, look, {
+      x: this.previewX,
+      y: this.previewY,
+      aim,
+      trailX: -0.9,
+      trailY: 0.35 + Math.sin(time / 1300) * 0.15,
+      time,
+      scale: 2.4,
+      alpha: 1,
+      flash: false,
+    });
   }
 
   private cycle(delta: number): void {
@@ -72,7 +104,6 @@ export class TitleScene extends Phaser.Scene {
 
   private refreshCharacter(): void {
     const c = CHARACTERS[selectedCharacter(this)];
-    this.charDot.setFillStyle(c.color);
     this.charName.setText(c.name);
     this.charRole.setText(`${c.role}  ·  ${characterIndex(c.id) + 1}/${CHARACTER_ORDER.length}`);
   }

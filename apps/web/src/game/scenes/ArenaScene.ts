@@ -5,6 +5,7 @@ import type { Session } from '../../net/connect';
 import type { Unsubscribe } from '../../net/transport';
 import { VirtualStick } from '../input/VirtualStick';
 import { Fx } from '../fx/Fx';
+import { LOOKS, drawFatima } from '../fx/Fatima';
 import { FONT, makeButton } from '../ui';
 import type { GameSync, RenderState } from '../sync/GameSync';
 import { SoloSync } from '../sync/SoloSync';
@@ -59,6 +60,8 @@ export class ArenaScene extends Phaser.Scene {
   private prevEnemies = new Map<number, EnemyMemo>();
   private prevPickups = new Set<number>();
   private prevHp: [number, number] = [0, 0];
+  private prevPos: [{ x: number; y: number } | null, { x: number; y: number } | null] = [null, null];
+  private trail: [{ x: number; y: number }, { x: number; y: number }] = [{ x: -1, y: 0 }, { x: 1, y: 0 }];
   private prevCoreHp = 0;
   private prevPhase = -1;
   private readonly flashUntil = new Map<string, number>();
@@ -77,6 +80,7 @@ export class ArenaScene extends Phaser.Scene {
     this.prevEnemies.clear();
     this.prevPickups.clear();
     this.flashUntil.clear();
+    this.prevPos = [null, null];
 
     if (data.mode === 'versus') {
       this.session = data.session;
@@ -207,7 +211,7 @@ export class ArenaScene extends Phaser.Scene {
           this.fx.burst(p.x, p.y, 0x69f0ae, 24, 200, 500, 3);
         }
       }
-      if (p.hp > 0 && p.dashTicks > 0) this.fx.ghost(p.x, p.y, SIM.playerRadius, color);
+      if (p.hp > 0 && p.dashTicks > 0) this.fx.ghost(p.x, p.y, SIM.playerRadius * 1.1, color);
       this.prevHp[p.id] = p.hp;
     }
 
@@ -321,35 +325,56 @@ export class ArenaScene extends Phaser.Scene {
     g.strokeRect(0, 0, SIM.arenaW, SIM.arenaH);
   }
 
+  // 머리카락은 조준 반대 방향을 기본으로, 움직일 때는 이동 반대 방향으로 부드럽게 기운다.
+  private updateTrail(p: PlayerState): { x: number; y: number } {
+    const prev = this.prevPos[p.id];
+    let dx = -Math.cos(p.aimAngle);
+    let dy = -Math.sin(p.aimAngle);
+    if (prev) {
+      const vx = p.x - prev.x;
+      const vy = p.y - prev.y;
+      const speed = Math.hypot(vx, vy);
+      if (speed > 0.8) {
+        const w = Math.min(1, speed / 6);
+        dx = dx * (1 - w) - (vx / speed) * w;
+        dy = dy * (1 - w) - (vy / speed) * w;
+      }
+    }
+    this.prevPos[p.id] = { x: p.x, y: p.y };
+    const cur = this.trail[p.id];
+    cur.x += (dx - cur.x) * 0.15;
+    cur.y += (dy - cur.y) * 0.15;
+    const len = Math.hypot(cur.x, cur.y) || 1;
+    return { x: cur.x / len, y: cur.y / len };
+  }
+
   private renderPlayer(p: PlayerState, rs: RenderState, now: number): void {
     const g = this.gfx;
     const character = CHARACTERS[p.character];
     const alive = p.hp > 0;
     const flash = this.flashing(`p${p.id}`, now);
+    const trail = this.updateTrail(p);
 
     if (alive) {
-      g.fillStyle(character.color, 0.14);
-      g.fillCircle(p.x, p.y, SIM.playerRadius * 1.9);
+      g.fillStyle(character.color, 0.12);
+      g.fillCircle(p.x, p.y, SIM.playerRadius * 2);
     }
-    g.fillStyle(flash ? 0xffffff : character.color, alive ? 1 : 0.3);
-    g.fillCircle(p.x, p.y, SIM.playerRadius);
-    if (alive) {
-      g.fillStyle(0xffffff, 0.35);
-      g.fillCircle(p.x - SIM.playerRadius * 0.3, p.y - SIM.playerRadius * 0.3, SIM.playerRadius * 0.4);
-    }
+    drawFatima(g, LOOKS[p.character], {
+      x: p.x,
+      y: p.y,
+      aim: p.aimAngle,
+      trailX: trail.x,
+      trailY: trail.y,
+      time: now,
+      scale: 1.15,
+      alpha: alive ? 1 : 0.35,
+      flash,
+    });
     if (p.dashTicks > 0) {
       g.lineStyle(2, 0xffffff, 0.7);
-      g.strokeCircle(p.x, p.y, SIM.playerRadius + 6);
+      g.strokeCircle(p.x, p.y, SIM.playerRadius + 8);
     }
-    if (alive) {
-      g.lineStyle(4, 0xffffff, 0.9);
-      g.lineBetween(
-        p.x,
-        p.y,
-        p.x + Math.cos(p.aimAngle) * SIM.playerRadius * 1.7,
-        p.y + Math.sin(p.aimAngle) * SIM.playerRadius * 1.7,
-      );
-    } else if (rs.mode === 'coop') {
+    if (!alive && rs.mode === 'coop') {
       g.lineStyle(3, 0x69f0ae, 0.9);
       g.beginPath();
       g.arc(p.x, p.y, SIM.playerRadius + 8, -Math.PI / 2, -Math.PI / 2 + (Math.PI * 2 * p.reviveProgress) / COOP.reviveTicks);
