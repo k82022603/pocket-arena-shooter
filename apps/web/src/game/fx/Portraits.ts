@@ -11,32 +11,19 @@ interface PortraitSpec {
   exclude?: [number, number, number, number][];
 }
 
+// 단독 전신 일러스트(흰 배경). 예비: fates-trio.webp(세 자매 그룹), est-black-knight.png, atropos2.jpg(핑크 제복), est1/6(오렌지 드레스)
 const TEXTURES: Record<string, string> = {
-  'fatima-trio': '/fatima/fates-trio.webp',
-  'fatima-est': '/fatima/est-black-knight.png',
+  'fatima-lachesis': '/fatima/laki2.jpg',
+  'fatima-clotho': '/fatima/clotho1.jpg',
+  'fatima-atropos': '/fatima/atropos1.jpg',
+  'fatima-est': '/fatima/est2.jpg',
 };
 
 const SPECS: Record<CharacterId, PortraitSpec> = {
-  lachesis: { texture: 'fatima-trio', rect: [0.44, 0.02, 0.84, 0.395], exclude: [[0.5, 0, 1, 0.13]] },
-  clotho: {
-    texture: 'fatima-trio',
-    rect: [0.19, 0.17, 0.56, 0.7],
-    exclude: [
-      [0.8, 0, 1, 0.17],
-      [0.88, 0.5, 1, 1],
-      [0, 0.88, 0.55, 1],
-    ],
-  },
-  atropos: {
-    texture: 'fatima-trio',
-    rect: [0.5, 0.4, 0.69, 0.93],
-    exclude: [
-      [0.6, 0, 1, 0.22],
-      [0, 0, 0.2, 0.3],
-      [0, 0.9, 0.5, 1],
-    ],
-  },
-  est: { texture: 'fatima-est', rect: [0.06, 0, 0.94, 0.93] },
+  lachesis: { texture: 'fatima-lachesis', rect: [0, 0, 1, 1] },
+  clotho: { texture: 'fatima-clotho', rect: [0, 0, 1, 1] },
+  atropos: { texture: 'fatima-atropos', rect: [0, 0, 1, 1] },
+  est: { texture: 'fatima-est', rect: [0, 0, 1, 1] },
 };
 
 // 배경으로 볼 색 거리 (RGB 유클리드). 종이 크림색·흰 배경은 지우고 흰 소매는 검은 윤곽선에 막혀 남는다.

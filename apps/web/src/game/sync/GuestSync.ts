@@ -6,7 +6,7 @@ import {
   bulletHits,
   consumeFire,
   createInitialState,
-  makeBullet,
+  makeBullets,
   outcomeOf,
   summarize,
   type MatchSummary,
@@ -14,6 +14,7 @@ import {
 } from '../../sim/core';
 import { INPUT_REDUNDANCY, decodeSnapshot, encodeCharacter, encodeInput, type Snapshot } from '../../sim/serialize';
 import { ENEMIES, SIM, type BulletState, type EnemyState, type InputFrame, type PlayerState, type SimState } from '../../sim/types';
+import { WEAPONS } from '../../sim/weapons';
 import { INTERP_DELAY_TICKS, monotonicTick, type GameSync, type RenderState, type SyncLink } from './GameSync';
 
 const MAX_SNAPSHOTS = 32;
@@ -136,14 +137,17 @@ export class GuestSync implements GameSync {
 
     applyPlayerInput(this.predicted, local);
     if (consumeFire(this.predicted, local)) {
-      this.predictedBullets.push({ ...makeBullet(this.predicted, -this.localTick, this.localTick, 0), authTick: null });
+      // 예측 탄환 id는 음수로 두어 권위 탄환 id와 겹치지 않게 한다 (산탄은 여러 발).
+      for (const b of makeBullets(this.predicted, -this.localTick * 8 - 7, this.localTick, 0)) {
+        this.predictedBullets.push({ ...b, authTick: null });
+      }
     }
 
     const render = this.lastRender;
     this.predictedBullets = this.predictedBullets.filter((b) => {
       if (!advanceBullet(b)) return false;
-      // 호스트가 되감기로 같은 시점을 판정하므로, 화면상 명중이면 미리 지운다.
-      return !(render && this.visuallyHits(b, render));
+      // 호스트가 되감기로 같은 시점을 판정하므로, 화면상 명중이면 미리 지운다 (관통탄은 계속 날아간다).
+      return WEAPONS[b.kind].pierce || !(render && this.visuallyHits(b, render));
     });
   }
 
@@ -159,7 +163,7 @@ export class GuestSync implements GameSync {
     const latest = this.snapshots[this.snapshots.length - 1];
     if (!latest) {
       const players: [PlayerState, PlayerState] = [this.placeholder.players[0], this.predicted];
-      return { ...this.placeholder, tick: this.localTick, players, bullets: this.predictedBullets };
+      return { ...this.placeholder, tick: this.localTick, players, bullets: this.predictedBullets, pickups: [] };
     }
 
     const estimatedHostTick = latest.state.tick + ((nowMs - latest.receivedAt) * SIM.tickRate) / 1000;
@@ -203,6 +207,7 @@ export class GuestSync implements GameSync {
       playerCount: to.state.playerCount,
       players,
       bullets,
+      pickups: to.state.pickups,
       coop,
     };
     this.lastRender = render;

@@ -93,6 +93,18 @@ class SfxEngine {
     this.noise(0.05, 0.15, 4000, 800);
   }
 
+  shotgun(): void {
+    if (!this.ready('shotgun', 80)) return;
+    this.noise(0.18, 0.45, 2500, 300);
+    this.tone(180, 60, 0.16, 'square', 0.18);
+  }
+
+  laser(): void {
+    if (!this.ready('laser', 60)) return;
+    this.tone(1400, 400, 0.16, 'sawtooth', 0.12);
+    this.tone(2200, 900, 0.1, 'sine', 0.08);
+  }
+
   enemyShot(): void {
     if (!this.ready('enemyShot', 60)) return;
     this.tone(420, 160, 0.12, 'sawtooth', 0.08);

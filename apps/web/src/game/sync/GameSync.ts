@@ -2,7 +2,7 @@ import type { Channel } from '../../net/transport';
 import type { MatchSummary, Outcome } from '../../sim/core';
 import { SIM, type InputFrame, type SimState } from '../../sim/types';
 
-export type RenderState = Pick<SimState, 'tick' | 'mode' | 'playerCount' | 'players' | 'bullets' | 'coop'>;
+export type RenderState = Pick<SimState, 'tick' | 'mode' | 'playerCount' | 'players' | 'bullets' | 'pickups' | 'coop'>;
 
 export interface GameSync {
   readonly kind: 'solo' | 'host' | 'guest';

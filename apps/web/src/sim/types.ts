@@ -1,4 +1,5 @@
 import type { CharacterId } from './characters';
+import type { PickupKind, WeaponKind } from './weapons';
 
 export type GameMode = 'duel' | 'coop';
 
@@ -34,6 +35,10 @@ export interface PlayerState {
   dashCooldown: number;
   // 협동 모드에서 다운된 뒤 아군이 곁에 머문 틱 수.
   reviveProgress: number;
+  weapon: WeaponKind;
+  // 픽업 무기 남은 틱. 0이 되면 라이플로 돌아간다.
+  weaponTicks: number;
+  boostTicks: number;
 }
 
 export const ENEMY_OWNER = 2;
@@ -42,10 +47,13 @@ export type BulletOwner = 0 | 1 | typeof ENEMY_OWNER;
 export interface BulletState {
   id: number;
   owner: BulletOwner;
+  kind: WeaponKind;
   // 발사를 일으킨 소유자의 입력 틱. 게스트가 예측 탄환과 권위 탄환을 대조하는 키.
   spawnTick: number;
   // 판정 시 상대 위치를 이만큼 과거로 되감는다 (호스트 전용, 전송하지 않음).
   lagTicks: number;
+  // 관통탄이 이미 맞힌 대상 id (호스트 전용, 전송하지 않음).
+  hits: number[];
   x: number;
   y: number;
   vx: number;
@@ -68,6 +76,7 @@ export interface EnemyState {
 
 export interface PickupState {
   id: number;
+  kind: PickupKind;
   x: number;
   y: number;
 }
@@ -83,9 +92,7 @@ export interface CoopState {
   // 호스트 전용, 스냅샷에 싣지 않음
   spawnQueue: EnemyKind[];
   enemies: EnemyState[];
-  pickups: PickupState[];
   nextEnemyId: number;
-  pickupTimer: number;
 }
 
 export interface PlayerStats {
@@ -113,6 +120,9 @@ export interface SimState {
   stats: [PlayerStats, PlayerStats];
   bullets: BulletState[];
   nextBulletId: number;
+  pickups: PickupState[];
+  pickupTimer: number;
+  nextPickupId: number;
   coop: CoopState | null;
 }
 
@@ -140,10 +150,6 @@ export const COOP = {
   reviveRadius: 70,
   reviveTicks: 120,
   reviveHpRatio: 0.5,
-  pickupIntervalTicks: 900,
-  pickupRadius: 14,
-  pickupHeal: 30,
-  maxPickups: 3,
   enemyBulletSpeed: 500,
   enemyBulletDamage: 8,
   enemyBulletTtl: 120,

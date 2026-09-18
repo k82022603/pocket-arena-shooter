@@ -1,6 +1,6 @@
 import { CHARACTERS } from './characters';
 import { damagePlayer } from './core';
-import { xorshift32 } from './prng';
+import { nextRandom } from './prng';
 import {
   COOP,
   ENEMIES,
@@ -21,15 +21,8 @@ export function createCoopState(): CoopState {
     timer: COOP.breakTicks,
     spawnQueue: [],
     enemies: [],
-    pickups: [],
     nextEnemyId: 1,
-    pickupTimer: COOP.pickupIntervalTicks,
   };
-}
-
-function rand(state: SimState): number {
-  state.rngState = xorshift32(state.rngState || 0x9e3779b9);
-  return state.rngState / 0x100000000;
 }
 
 export function activePlayers(state: SimState): PlayerState[] {
@@ -65,7 +58,6 @@ export function stepCoop(state: SimState): void {
   stepWaves(state, coop);
   stepEnemies(state, coop);
   coop.enemies = coop.enemies.filter((e) => e.hp > 0);
-  stepPickups(state, coop);
   stepRevive(state);
 }
 
@@ -99,8 +91,8 @@ function stepWaves(state: SimState, coop: CoopState): void {
 }
 
 function spawnEnemy(state: SimState, coop: CoopState, kind: EnemyKind): void {
-  const side = Math.floor(rand(state) * 4);
-  const t = rand(state);
+  const side = Math.floor(nextRandom(state) * 4);
+  const t = nextRandom(state);
   const margin = ENEMIES[kind].radius;
   let x: number;
   let y: number;
@@ -135,7 +127,7 @@ interface Target {
   player: PlayerState | null;
 }
 
-function pickTarget(state: SimState, coop: CoopState, e: EnemyState): Target {
+function pickTarget(state: SimState, e: EnemyState): Target {
   const core: Target = { x: COOP.coreX, y: COOP.coreY, radius: COOP.coreRadius, player: null };
   if (e.kind === 2) return core;
   let best: PlayerState | null = null;
@@ -157,7 +149,7 @@ function stepEnemies(state: SimState, coop: CoopState): void {
     if (e.contactCooldown > 0) e.contactCooldown -= 1;
     if (e.fireCooldown > 0) e.fireCooldown -= 1;
 
-    const target = pickTarget(state, coop, e);
+    const target = pickTarget(state, e);
     const dx = target.x - e.x;
     const dy = target.y - e.y;
     const dist = Math.hypot(dx, dy) || 1;
@@ -187,8 +179,10 @@ function stepEnemies(state: SimState, coop: CoopState): void {
       state.bullets.push({
         id: state.nextBulletId++,
         owner: ENEMY_OWNER,
+        kind: 0,
         spawnTick: state.tick,
         lagTicks: 0,
+        hits: [],
         x: e.x + nx * (spec.radius + SIM.bulletRadius),
         y: e.y + ny * (spec.radius + SIM.bulletRadius),
         vx: nx * COOP.enemyBulletSpeed,
@@ -226,30 +220,6 @@ function separateEnemies(enemies: EnemyState[]): void {
       b.y += ny * push;
     }
   }
-}
-
-function stepPickups(state: SimState, coop: CoopState): void {
-  coop.pickupTimer -= 1;
-  if (coop.pickupTimer <= 0) {
-    coop.pickupTimer = COOP.pickupIntervalTicks;
-    if (coop.pickups.length < COOP.maxPickups) {
-      coop.pickups.push({
-        id: coop.nextEnemyId++,
-        x: 200 + rand(state) * (SIM.arenaW - 400),
-        y: 120 + rand(state) * (SIM.arenaH - 240),
-      });
-    }
-  }
-  const alive = alivePlayers(state);
-  coop.pickups = coop.pickups.filter((pk) => {
-    for (const p of alive) {
-      if (Math.hypot(p.x - pk.x, p.y - pk.y) < COOP.pickupRadius + SIM.playerRadius) {
-        p.hp = Math.min(CHARACTERS[p.character].stats.maxHp, p.hp + COOP.pickupHeal);
-        return false;
-      }
-    }
-    return true;
-  });
 }
 
 function stepRevive(state: SimState): void {

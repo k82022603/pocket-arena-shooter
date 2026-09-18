@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { CHARACTERS } from '../../sim/characters';
 import { COOP, ENEMIES, ENEMY_OWNER, SIM, type BulletState, type InputFrame, type PlayerState } from '../../sim/types';
+import { PICKUP, PICKUP_COLORS, WEAPONS } from '../../sim/weapons';
 import type { Session } from '../../net/connect';
 import type { FailReason } from '../../net/session';
 import type { Unsubscribe } from '../../net/transport';
@@ -74,6 +75,8 @@ export class ArenaScene extends Phaser.Scene {
   private prevPickups = new Set<number>();
   private prevHp: [number, number] = [0, 0];
   private prevDash: [number, number] = [0, 0];
+  private prevWeapon: [number, number] = [0, 0];
+  private prevBoost: [number, number] = [0, 0];
   private prevPos: [{ x: number; y: number } | null, { x: number; y: number } | null] = [null, null];
   private trail: [{ x: number; y: number }, { x: number; y: number }] = [{ x: -1, y: 0 }, { x: 1, y: 0 }];
   private prevCoreHp = 0;
@@ -314,6 +317,8 @@ export class ArenaScene extends Phaser.Scene {
       if (!first && !this.prevBullets.has(b.id)) {
         this.fx.muzzle(b.x - b.vx * SIM.dt, b.y - b.vy * SIM.dt, Math.atan2(b.vy, b.vx), color);
         if (b.owner === ENEMY_OWNER) sfx.enemyShot();
+        else if (b.kind === 1) sfx.shotgun();
+        else if (b.kind === 2) sfx.laser();
         else sfx.shot();
       }
     }
@@ -356,11 +361,35 @@ export class ArenaScene extends Phaser.Scene {
           sfx.revive();
         }
         if (p.hp > 0 && p.dashTicks > 0 && this.prevDash[p.id] === 0) sfx.dash();
+        if (p.weapon !== this.prevWeapon[p.id] && p.weapon !== 0) {
+          this.fx.ring(p.x, p.y, WEAPONS[p.weapon].color, 70, 400, 3);
+          this.fx.burst(p.x, p.y, WEAPONS[p.weapon].color, 14, 160, 400, 2.5);
+          sfx.pickup();
+        }
+        if (p.boostTicks > 0 && this.prevBoost[p.id] === 0) {
+          this.fx.ring(p.x, p.y, PICKUP_COLORS[3], 70, 400, 3);
+          sfx.pickup();
+        }
       }
-      if (p.hp > 0 && p.dashTicks > 0) this.fx.ghost(p.x, p.y, SIM.playerRadius * 1.1, color);
+      if (p.hp > 0 && (p.dashTicks > 0 || p.boostTicks > 0)) this.fx.ghost(p.x, p.y, SIM.playerRadius * 1.1, color);
       this.prevHp[p.id] = p.hp;
       this.prevDash[p.id] = p.dashTicks;
+      this.prevWeapon[p.id] = p.weapon;
+      this.prevBoost[p.id] = p.boostTicks;
     }
+
+    if (!first) {
+      for (const id of this.prevPickups) {
+        if (rs.pickups.some((pk) => pk.id === id)) continue;
+        for (const p of rs.players) {
+          if (p.id < rs.playerCount && p.hp > 0) {
+            this.fx.burst(p.x, p.y, 0x69f0ae, 10, 150, 400, 2.5);
+            break;
+          }
+        }
+      }
+    }
+    this.prevPickups = new Set(rs.pickups.map((pk) => pk.id));
 
     const coop = rs.coop;
     if (coop) {
@@ -380,15 +409,6 @@ export class ArenaScene extends Phaser.Scene {
           this.fx.shake(prev.kind === 2 ? 6 : 2.5, 150);
           sfx.explode(prev.kind === 2);
         }
-        for (const id of this.prevPickups) {
-          if (coop.pickups.some((pk) => pk.id === id)) continue;
-          for (const p of rs.players) {
-            if (p.id < rs.playerCount && p.hp > 0) {
-              this.fx.burst(p.x, p.y, 0x69f0ae, 10, 150, 400, 2.5);
-              break;
-            }
-          }
-        }
         if (coop.coreHp < this.prevCoreHp) {
           this.fx.ring(COOP.coreX, COOP.coreY, 0xff5252, COOP.coreRadius + 30, 300, 4);
           this.fx.shake(4, 160);
@@ -405,7 +425,6 @@ export class ArenaScene extends Phaser.Scene {
         }
       }
       this.prevEnemies = enemies;
-      this.prevPickups = new Set(coop.pickups.map((pk) => pk.id));
       this.prevCoreHp = coop.coreHp;
       this.prevPhase = coop.phase;
     }
@@ -413,6 +432,7 @@ export class ArenaScene extends Phaser.Scene {
 
   private bulletColor(b: BulletState, rs: RenderState): number {
     if (b.owner === ENEMY_OWNER) return ENEMY_BULLET_COLOR;
+    if (b.kind !== 0) return WEAPONS[b.kind].color;
     return rs.mode === 'coop' ? CHARACTERS[rs.players[b.owner].character].color : PLAYER_BULLET_COLOR;
   }
 
@@ -453,16 +473,20 @@ export class ArenaScene extends Phaser.Scene {
       this.renderPlayer(p, rs, now);
     }
 
+    this.renderPickups(rs, now);
+
     for (const b of rs.bullets) {
       const color = this.bulletColor(b, rs);
-      const tx = b.x - b.vx * SIM.dt * 3;
-      const ty = b.y - b.vy * SIM.dt * 3;
-      g.lineStyle(7, color, 0.18);
+      const laser = b.kind === 2;
+      const trail = laser ? 5 : b.kind === 1 ? 2 : 3;
+      const tx = b.x - b.vx * SIM.dt * trail;
+      const ty = b.y - b.vy * SIM.dt * trail;
+      g.lineStyle(laser ? 12 : 7, color, laser ? 0.25 : 0.18);
       g.lineBetween(tx, ty, b.x, b.y);
-      g.lineStyle(2.5, color, 0.85);
+      g.lineStyle(laser ? 4 : 2.5, color, 0.85);
       g.lineBetween(tx, ty, b.x, b.y);
       g.fillStyle(0xffffff, 1);
-      g.fillCircle(b.x, b.y, SIM.bulletRadius - 1);
+      g.fillCircle(b.x, b.y, b.kind === 1 ? SIM.bulletRadius - 2 : SIM.bulletRadius - 1);
     }
 
     if (this.desktop.active) this.renderAimGuide(rs, now);
@@ -609,15 +633,6 @@ export class ArenaScene extends Phaser.Scene {
     g.fillStyle(coreColor, 1);
     g.fillRect(COOP.coreX - 50, COOP.coreY + COOP.coreRadius + 8, 100 * coreRatio, 8);
 
-    for (const pk of coop.pickups) {
-      const bob = Math.sin(now / 250 + pk.id) * 3;
-      g.fillStyle(0x69f0ae, 0.2);
-      g.fillCircle(pk.x, pk.y + bob, COOP.pickupRadius + 6);
-      g.fillStyle(0x69f0ae, 1);
-      g.fillRect(pk.x - 4, pk.y - 12 + bob, 8, 24);
-      g.fillRect(pk.x - 12, pk.y - 4 + bob, 24, 8);
-    }
-
     for (const e of coop.enemies) {
       const spec = ENEMIES[e.kind];
       const flash = this.flashing(`e${e.id}`, now);
@@ -640,6 +655,40 @@ export class ArenaScene extends Phaser.Scene {
     }
   }
 
+  // 픽업 아이콘: 힐팩 십자, 산탄총 부채꼴 점 3개, 레이저 빛나는 막대, 부스트 이중 화살표
+  private renderPickups(rs: RenderState, now: number): void {
+    const g = this.gfx;
+    for (const pk of rs.pickups) {
+      const bob = Math.sin(now / 250 + pk.id) * 3;
+      const y = pk.y + bob;
+      const color = PICKUP_COLORS[pk.kind];
+      g.fillStyle(color, 0.18);
+      g.fillCircle(pk.x, y, PICKUP.radius + 8 + Math.sin(now / 300 + pk.id) * 2);
+      g.lineStyle(1.5, color, 0.6);
+      g.strokeCircle(pk.x, y, PICKUP.radius + 3);
+      g.fillStyle(color, 1);
+      switch (pk.kind) {
+        case 0:
+          g.fillRect(pk.x - 3.5, y - 11, 7, 22);
+          g.fillRect(pk.x - 11, y - 3.5, 22, 7);
+          break;
+        case 1:
+          g.fillRect(pk.x - 10, y + 2, 20, 5);
+          for (const a of [-0.45, 0, 0.45]) g.fillCircle(pk.x + Math.sin(a) * 9, y - 5 - Math.cos(a) * 5, 2.5);
+          break;
+        case 2:
+          g.fillRect(pk.x - 12, y - 2.5, 24, 5);
+          g.fillStyle(0xffffff, 0.9);
+          g.fillRect(pk.x - 8, y - 1, 16, 2);
+          break;
+        case 3:
+          g.fillTriangle(pk.x - 10, y - 8, pk.x - 10, y + 8, pk.x - 1, y);
+          g.fillTriangle(pk.x, y - 8, pk.x, y + 8, pk.x + 9, y);
+          break;
+      }
+    }
+  }
+
   private renderHudPortraits(rs: RenderState): void {
     for (const p of rs.players) {
       const slot = p.id;
@@ -658,7 +707,12 @@ export class ArenaScene extends Phaser.Scene {
   private renderHud(rs: RenderState): void {
     this.renderHudPortraits(rs);
     const [p0, p1] = rs.players;
-    const hp = (p: PlayerState) => `${CHARACTERS[p.character].name} ${p.hp}/${CHARACTERS[p.character].stats.maxHp}`;
+    const hp = (p: PlayerState) => {
+      let text = `${CHARACTERS[p.character].name} ${p.hp}/${CHARACTERS[p.character].stats.maxHp}`;
+      if (p.weapon !== 0) text += ` [${WEAPONS[p.weapon].name} ${Math.ceil(p.weaponTicks / SIM.tickRate)}s]`;
+      if (p.boostTicks > 0) text += ` [부스트 ${Math.ceil(p.boostTicks / SIM.tickRate)}s]`;
+      return text;
+    };
     const players = rs.playerCount === 2 ? `${hp(p0)}   vs   ${hp(p1)}` : hp(p0);
     const net = this.session
       ? `\nRTT ${this.session.rtt.toFixed(0)}ms  ${this.session.kind}/${this.sync.kind}  ${this.sync.debugInfo()}`

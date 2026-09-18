@@ -62,7 +62,7 @@ export class ResultScene extends Phaser.Scene {
     let title: string;
     let subtitle = '';
     if (outcome.mode === 'duel') {
-      title = online ? (outcome.winner === data.localId ? '승리!' : '패배') : 'P1 승리';
+      title = outcome.winner === data.localId ? '승리!' : '패배';
     } else if (outcome.won) {
       title = '방어 성공!';
       subtitle = `${COOP.waves}웨이브 전부 막아냈습니다`;
@@ -79,7 +79,7 @@ export class ResultScene extends Phaser.Scene {
     const canRematch = !data.session || data.session.connected;
 
     makeLabel(this, cx, height * 0.08, title, 40).setColor(
-      outcome.mode === 'duel' ? (online && outcome.winner !== data.localId ? '#ff8a80' : '#ffe066') : outcome.won ? '#69f0ae' : '#ff8a80',
+      outcome.mode === 'duel' ? (outcome.winner !== data.localId ? '#ff8a80' : '#ffe066') : outcome.won ? '#69f0ae' : '#ff8a80',
     );
     if (subtitle) makeLabel(this, cx, height * 0.08 + 34, subtitle, 14);
 

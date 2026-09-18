@@ -12,6 +12,7 @@ import type {
   SimState,
   WavePhase,
 } from './types';
+import type { PickupKind, WeaponKind } from './weapons';
 
 export const PACKET_INPUT = 0x01;
 export const PACKET_CHARACTER = 0x02;
@@ -142,15 +143,15 @@ class Reader {
   }
 }
 
-// snapshot: header, player x2, stats x2, bullet xN, (coop) core/wave, enemy xM, pickup xK
+// snapshot: header, player x2, stats x2, bullet xN, pickup xK, (coop) core/wave, enemy xM
 const HEADER_BYTES = 1 + 4 + 4 + 4 + 4 + 1 + 1 + 1 + 1;
-const PLAYER_BYTES = 1 + 4 + 4 + 2 + 4 + 1 + 1 + 1 + 1;
+const PLAYER_BYTES = 1 + 4 + 4 + 2 + 4 + 1 + 1 + 1 + 1 + 1 + 2 + 2;
 const STATS_FIELDS: (keyof PlayerStats)[] = ['shots', 'hits', 'damageDealt', 'damageTaken', 'kills', 'dashes', 'downs'];
 const STATS_BYTES = STATS_FIELDS.length * 4;
-const BULLET_BYTES = 4 + 1 + 4 + 4 + 4 + 4 + 4 + 1 + 1;
-const COOP_BYTES = 2 + 1 + 1 + 2 + 4 + 1 + 1;
+const BULLET_BYTES = 4 + 1 + 1 + 4 + 4 + 4 + 4 + 4 + 1 + 1;
+const PICKUP_BYTES = 4 + 1 + 4 + 4;
+const COOP_BYTES = 2 + 1 + 1 + 2 + 4 + 1;
 const ENEMY_BYTES = 4 + 1 + 4 + 4 + 2;
-const PICKUP_BYTES = 4 + 4 + 4;
 const MAX_LIST = 255;
 
 export interface Snapshot {
@@ -160,14 +161,15 @@ export interface Snapshot {
 
 export function encodeSnapshot(state: SimState, ackTick: number): Uint8Array {
   const bullets = state.bullets.length > MAX_LIST ? state.bullets.slice(-MAX_LIST) : state.bullets;
+  const pickups = state.pickups.slice(0, MAX_LIST);
   const coop = state.coop;
   const enemies = coop ? coop.enemies.slice(0, MAX_LIST) : [];
-  const pickups = coop ? coop.pickups.slice(0, MAX_LIST) : [];
   const size =
     HEADER_BYTES +
     2 * (PLAYER_BYTES + STATS_BYTES) +
     bullets.length * BULLET_BYTES +
-    (coop ? COOP_BYTES + enemies.length * ENEMY_BYTES + pickups.length * PICKUP_BYTES : 0);
+    pickups.length * PICKUP_BYTES +
+    (coop ? COOP_BYTES + enemies.length * ENEMY_BYTES : 0);
   const w = new Writer(new Uint8Array(size));
 
   w.u8(PACKET_SNAPSHOT);
@@ -178,7 +180,7 @@ export function encodeSnapshot(state: SimState, ackTick: number): Uint8Array {
   w.u8(state.mode === 'coop' ? 1 : 0);
   w.u8(state.playerCount);
   w.u8(bullets.length);
-  w.u8(0);
+  w.u8(pickups.length);
 
   for (const p of state.players) {
     w.u8(characterIndex(p.character));
@@ -190,11 +192,15 @@ export function encodeSnapshot(state: SimState, ackTick: number): Uint8Array {
     w.u8(p.dashTicks);
     w.u8(p.dashCooldown);
     w.u8(p.reviveProgress);
+    w.u8(p.weapon);
+    w.u16(p.weaponTicks);
+    w.u16(p.boostTicks);
   }
   for (const s of state.stats) for (const field of STATS_FIELDS) w.u32(s[field]);
   for (const b of bullets) {
     w.u32(b.id);
     w.u8(b.owner);
+    w.u8(b.kind);
     w.u32(b.spawnTick);
     w.f32(b.x);
     w.f32(b.y);
@@ -203,6 +209,12 @@ export function encodeSnapshot(state: SimState, ackTick: number): Uint8Array {
     w.u8(b.damage);
     w.u8(b.ttl);
   }
+  for (const pk of pickups) {
+    w.u32(pk.id);
+    w.u8(pk.kind);
+    w.f32(pk.x);
+    w.f32(pk.y);
+  }
   if (coop) {
     w.u16(coop.coreHp);
     w.u8(coop.wave);
@@ -210,18 +222,12 @@ export function encodeSnapshot(state: SimState, ackTick: number): Uint8Array {
     w.u16(coop.timer);
     w.u32(coop.nextEnemyId);
     w.u8(enemies.length);
-    w.u8(pickups.length);
     for (const e of enemies) {
       w.u32(e.id);
       w.u8(e.kind);
       w.f32(e.x);
       w.f32(e.y);
       w.u16(e.hp);
-    }
-    for (const pk of pickups) {
-      w.u32(pk.id);
-      w.f32(pk.x);
-      w.f32(pk.y);
     }
   }
   return w.buf;
@@ -238,8 +244,8 @@ export function decodeSnapshot(buf: Uint8Array): Snapshot | null {
   const mode = r.u8() === 1 ? 'coop' : 'duel';
   const playerCount = r.u8() === 1 ? 1 : 2;
   const bulletCount = r.u8();
-  r.u8();
-  if (r.remaining < 2 * (PLAYER_BYTES + STATS_BYTES) + bulletCount * BULLET_BYTES) return null;
+  const pickupCount = r.u8();
+  if (r.remaining < 2 * (PLAYER_BYTES + STATS_BYTES) + bulletCount * BULLET_BYTES + pickupCount * PICKUP_BYTES) return null;
 
   const players: PlayerState[] = [];
   for (let id = 0 as 0 | 1; id < 2; id = (id + 1) as 0 | 1) {
@@ -254,6 +260,9 @@ export function decodeSnapshot(buf: Uint8Array): Snapshot | null {
       dashTicks: r.u8(),
       dashCooldown: r.u8(),
       reviveProgress: r.u8(),
+      weapon: r.u8() as WeaponKind,
+      weaponTicks: r.u16(),
+      boostTicks: r.u16(),
     });
   }
   const stats: PlayerStats[] = [];
@@ -267,8 +276,10 @@ export function decodeSnapshot(buf: Uint8Array): Snapshot | null {
     bullets.push({
       id: r.u32(),
       owner: r.u8() as BulletOwner,
+      kind: r.u8() as WeaponKind,
       spawnTick: r.u32(),
       lagTicks: 0,
+      hits: [],
       x: r.f32(),
       y: r.f32(),
       vx: r.f32(),
@@ -276,6 +287,10 @@ export function decodeSnapshot(buf: Uint8Array): Snapshot | null {
       damage: r.u8(),
       ttl: r.u8(),
     });
+  }
+  const pickups: PickupState[] = [];
+  for (let i = 0; i < pickupCount; i++) {
+    pickups.push({ id: r.u32(), kind: r.u8() as PickupKind, x: r.f32(), y: r.f32() });
   }
 
   let coop: CoopState | null = null;
@@ -287,8 +302,7 @@ export function decodeSnapshot(buf: Uint8Array): Snapshot | null {
     const timer = r.u16();
     const nextEnemyId = r.u32();
     const enemyCount = r.u8();
-    const pickupCount = r.u8();
-    if (r.remaining < enemyCount * ENEMY_BYTES + pickupCount * PICKUP_BYTES) return null;
+    if (r.remaining < enemyCount * ENEMY_BYTES) return null;
     const enemies: EnemyState[] = [];
     for (let i = 0; i < enemyCount; i++) {
       enemies.push({
@@ -301,11 +315,7 @@ export function decodeSnapshot(buf: Uint8Array): Snapshot | null {
         contactCooldown: 0,
       });
     }
-    const pickups: PickupState[] = [];
-    for (let i = 0; i < pickupCount; i++) {
-      pickups.push({ id: r.u32(), x: r.f32(), y: r.f32() });
-    }
-    coop = { coreHp, wave, phase, timer, spawnQueue: [], enemies, pickups, nextEnemyId, pickupTimer: 0 };
+    coop = { coreHp, wave, phase, timer, spawnQueue: [], enemies, nextEnemyId };
   }
 
   return {
@@ -319,6 +329,9 @@ export function decodeSnapshot(buf: Uint8Array): Snapshot | null {
       stats: stats as [PlayerStats, PlayerStats],
       bullets,
       nextBulletId,
+      pickups,
+      pickupTimer: 0,
+      nextPickupId: 0,
       coop,
     },
     ackTick,
