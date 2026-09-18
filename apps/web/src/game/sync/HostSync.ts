@@ -1,10 +1,10 @@
-import type { Channel, Transport } from '../../net/transport';
+import type { Channel } from '../../net/transport';
 import type { CharacterId } from '../../sim/characters';
 import { createInitialState, outcomeOf, setPlayerCharacter, step, summarize, type MatchSummary, type Outcome } from '../../sim/core';
 import { PositionHistory } from '../../sim/history';
 import { decodeCharacter, decodeInput, encodeCharacter, encodeSnapshot } from '../../sim/serialize';
 import { EMPTY_INPUT, SIM, type GameMode, type InputFrame, type SimState } from '../../sim/types';
-import { INTERP_DELAY_TICKS, monotonicTick, type GameSync, type RenderState } from './GameSync';
+import { INTERP_DELAY_TICKS, monotonicTick, type GameSync, type RenderState, type SyncLink } from './GameSync';
 
 const SNAPSHOT_INTERVAL_TICKS = 3;
 // 게스트 입력을 이 이상 쌓아두지 않는다 (60Hz 기준 100ms). 넘치면 오래된 것부터 버려 지연을 묶는다.
@@ -31,13 +31,20 @@ export class HostSync implements GameSync {
   private droppedInputs = 0;
 
   constructor(
-    private readonly transport: Transport,
-    local: CharacterId,
+    private readonly transport: SyncLink,
+    private readonly local: CharacterId,
     mode: GameMode,
   ) {
     this.state = createInitialState([local, local], { mode, playerCount: 2, seed: Date.now() });
     this.state.tick = monotonicTick();
     transport.send('event', encodeCharacter(local));
+  }
+
+  resync(): void {
+    this.queue.length = 0;
+    this.lastGuestInput = EMPTY_INPUT;
+    this.transport.send('event', encodeCharacter(this.local));
+    this.transport.send('event', encodeSnapshot(this.state, this.ackTick));
   }
 
   handleMessage(channel: Channel, bytes: Uint8Array): void {

@@ -1,4 +1,4 @@
-import type { Channel, Transport } from '../../net/transport';
+import type { Channel } from '../../net/transport';
 import { CHARACTERS, type CharacterId } from '../../sim/characters';
 import {
   advanceBullet,
@@ -14,7 +14,7 @@ import {
 } from '../../sim/core';
 import { INPUT_REDUNDANCY, decodeSnapshot, encodeCharacter, encodeInput, type Snapshot } from '../../sim/serialize';
 import { ENEMIES, SIM, type BulletState, type EnemyState, type InputFrame, type PlayerState, type SimState } from '../../sim/types';
-import { INTERP_DELAY_TICKS, monotonicTick, type GameSync, type RenderState } from './GameSync';
+import { INTERP_DELAY_TICKS, monotonicTick, type GameSync, type RenderState, type SyncLink } from './GameSync';
 
 const MAX_SNAPSHOTS = 32;
 const MAX_PENDING_INPUTS = 120;
@@ -39,22 +39,31 @@ export class GuestSync implements GameSync {
   readonly localId = 1 as const;
 
   private localTick = monotonicTick();
-  private readonly pending: PendingInput[] = [];
+  private pending: PendingInput[] = [];
   private predicted: PlayerState;
   private predictedBullets: PredictedBullet[] = [];
-  private readonly snapshots: ReceivedSnapshot[] = [];
+  private snapshots: ReceivedSnapshot[] = [];
   private readonly placeholder: SimState;
   private lastRender: RenderState | null = null;
   private corrections = 0;
   private rejectedShots = 0;
 
   constructor(
-    private readonly transport: Transport,
-    local: CharacterId,
+    private readonly transport: SyncLink,
+    private readonly local: CharacterId,
   ) {
     this.placeholder = createInitialState([local, local]);
     this.predicted = { ...this.placeholder.players[this.localId] };
     transport.send('event', encodeCharacter(local));
+  }
+
+  // 끊긴 동안의 스냅샷·입력은 버리고 호스트가 재전송하는 스냅샷부터 다시 맞춘다.
+  resync(): void {
+    this.snapshots.length = 0;
+    this.pending.length = 0;
+    this.predictedBullets = [];
+    this.lastRender = null;
+    this.transport.send('event', encodeCharacter(this.local));
   }
 
   handleMessage(_channel: Channel, bytes: Uint8Array): void {

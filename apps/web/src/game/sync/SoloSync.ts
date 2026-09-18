@@ -34,6 +34,8 @@ export class SoloSync implements GameSync {
     return summarize(this.state);
   }
 
+  resync(): void {}
+
   debugInfo(): string {
     return '';
   }

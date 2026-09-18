@@ -2,7 +2,9 @@ import Phaser from 'phaser';
 import { CHARACTERS } from '../../sim/characters';
 import { COOP, ENEMIES, ENEMY_OWNER, SIM, type BulletState, type InputFrame, type PlayerState } from '../../sim/types';
 import type { Session } from '../../net/connect';
+import type { FailReason } from '../../net/session';
 import type { Unsubscribe } from '../../net/transport';
+import type { Outcome } from '../../sim/core';
 import { VirtualStick } from '../input/VirtualStick';
 import { Fx } from '../fx/Fx';
 import { LOOKS, drawFatima } from '../fx/Fatima';
@@ -48,6 +50,9 @@ export class ArenaScene extends Phaser.Scene {
   private hud!: Phaser.GameObjects.Text;
   private banner!: Phaser.GameObjects.Text;
   private waveText!: Phaser.GameObjects.Text;
+  private reconnectShade!: Phaser.GameObjects.Rectangle;
+  private reconnectText!: Phaser.GameObjects.Text;
+  private ended = false;
   private moveStick!: VirtualStick;
   private aimStick!: VirtualStick;
   private dashPressed = false;
@@ -107,6 +112,7 @@ export class ArenaScene extends Phaser.Scene {
     const mode = selectedMode(this);
     this.accumulator = 0;
     this.unsubscribes = [];
+    this.ended = false;
     this.seen = false;
     this.prevBullets.clear();
     this.prevEnemies.clear();
@@ -115,11 +121,14 @@ export class ArenaScene extends Phaser.Scene {
     this.prevPos = [null, null];
 
     if (data.mode === 'versus') {
-      this.session = data.session;
-      const transport = data.session.transport;
-      this.sync = data.session.role === 'host' ? new HostSync(transport, local, mode) : new GuestSync(transport, local);
-      this.unsubscribes.push(transport.onMessage((channel, bytes) => this.sync.handleMessage(channel, bytes)));
-      this.unsubscribes.push(transport.onClose(() => this.scene.start('Title')));
+      const session = data.session;
+      this.session = session;
+      this.sync = session.role === 'host' ? new HostSync(session, local, mode) : new GuestSync(session, local);
+      this.unsubscribes.push(session.onMessage((channel, bytes) => this.sync.handleMessage(channel, bytes)));
+      this.unsubscribes.push(session.on('reconnected', () => this.sync.resync()));
+      this.unsubscribes.push(session.on('failed', (reason) => this.endByDisconnect(reason ?? 'rejoin_failed')));
+      if (session.state === 'failed') this.time.delayedCall(0, () => this.endByDisconnect(session.failReason ?? 'rejoin_failed'));
+      if (new URLSearchParams(location.search).has('debug')) (window as unknown as { __link?: Session }).__link = session;
     } else {
       this.session = undefined;
       this.sync = new SoloSync(local, mode);
@@ -146,6 +155,16 @@ export class ArenaScene extends Phaser.Scene {
       .setOrigin(0.5)
       .setDepth(60)
       .setAlpha(0);
+    this.reconnectShade = this.add
+      .rectangle(0, 0, this.scale.width, this.scale.height, 0x05080f, 0.6)
+      .setOrigin(0)
+      .setDepth(70)
+      .setVisible(false);
+    this.reconnectText = this.add
+      .text(this.scale.width / 2, this.scale.height / 2, '', { fontFamily: FONT, fontSize: '26px', color: '#ffffff', align: 'center' })
+      .setOrigin(0.5)
+      .setDepth(71)
+      .setVisible(false);
 
     this.moveStick = new VirtualStick(this, 'left');
     this.aimStick = new VirtualStick(this, 'right');
@@ -168,24 +187,65 @@ export class ArenaScene extends Phaser.Scene {
   }
 
   update(_time: number, deltaMs: number): void {
+    if (this.ended) return;
     this.samplePerformance(deltaMs);
+    // 재접속 중에는 시뮬레이션을 멈춘다. 호스트가 멈추므로 복구 후 그 시점부터 이어진다.
+    if (this.session && !this.session.connected) {
+      this.accumulator = 0;
+      this.renderReconnectOverlay();
+      this.fx.update(deltaMs);
+      this.render();
+      return;
+    }
+    this.hideReconnectOverlay();
     this.accumulator += Math.min(deltaMs, 100) / 1000;
     while (this.accumulator >= SIM.dt) {
       this.accumulator -= SIM.dt;
       this.sync.step(this.readLocalInput());
       const outcome = this.sync.outcome();
       if (outcome !== null) {
-        this.scene.start('Result', {
-          outcome,
-          summary: this.sync.summary(),
-          localId: this.sync.localId,
-          session: this.session,
-        });
+        this.finish(outcome);
         return;
       }
     }
     this.fx.update(deltaMs);
     this.render();
+  }
+
+  private finish(outcome: Outcome, note?: string): void {
+    if (this.ended) return;
+    this.ended = true;
+    this.scene.start('Result', {
+      outcome,
+      summary: this.sync.summary(),
+      localId: this.sync.localId,
+      session: this.session,
+      note,
+    });
+  }
+
+  // 복구 실패: 상대가 떠났으면(peer_left) 내가 남은 쪽, 내 재접속이 실패했으면 내가 떨어진 쪽이다.
+  private endByDisconnect(reason: FailReason): void {
+    const rs = this.sync.renderState(performance.now());
+    const remaining = reason === 'peer_left';
+    const localId = this.sync.localId;
+    const outcome: Outcome =
+      rs.mode === 'coop'
+        ? { mode: 'coop', won: false, wave: rs.coop?.wave ?? 0 }
+        : { mode: 'duel', winner: remaining ? localId : localId === 0 ? 1 : 0 };
+    this.finish(outcome, remaining ? '상대의 연결이 끊겼습니다' : '연결을 복구하지 못했습니다');
+  }
+
+  private renderReconnectOverlay(): void {
+    const remain = Math.max(0, Math.ceil((this.session!.deadline - performance.now()) / 1000));
+    this.reconnectShade.setVisible(true);
+    this.reconnectText.setVisible(true).setText(`재연결 중… (${remain})\n연결이 복구되면 그 시점부터 이어집니다`);
+  }
+
+  private hideReconnectOverlay(): void {
+    if (!this.reconnectShade.visible) return;
+    this.reconnectShade.setVisible(false);
+    this.reconnectText.setVisible(false);
   }
 
   private makeNameLabel(): Phaser.GameObjects.Text {
@@ -509,7 +569,7 @@ export class ArenaScene extends Phaser.Scene {
     const hp = (p: PlayerState) => `${CHARACTERS[p.character].name} ${p.hp}/${CHARACTERS[p.character].stats.maxHp}`;
     const players = rs.playerCount === 2 ? `${hp(p0)}   vs   ${hp(p1)}` : hp(p0);
     const net = this.session
-      ? `\nRTT ${this.session.transport.rtt.toFixed(0)}ms  ${this.session.transport.kind}/${this.sync.kind}  ${this.sync.debugInfo()}`
+      ? `\nRTT ${this.session.rtt.toFixed(0)}ms  ${this.session.kind}/${this.sync.kind}  ${this.sync.debugInfo()}`
       : '';
     this.hud.setText(`${players}   tick ${rs.tick}${net}`);
 
@@ -534,11 +594,13 @@ export class ArenaScene extends Phaser.Scene {
     this.world.setPosition(this.baseX, this.baseY);
     this.banner.setX(width / 2);
     this.waveText.setPosition(width / 2, height / 2);
+    this.reconnectShade.setSize(width, height);
+    this.reconnectText.setPosition(width / 2, height / 2);
   }
 
   private exit(): void {
-    this.session?.transport.close();
-    this.session?.signaling.close();
+    this.ended = true;
+    this.session?.close();
     this.scene.start('Title');
   }
 

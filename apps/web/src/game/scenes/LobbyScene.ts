@@ -155,7 +155,7 @@ export class LobbyScene extends Phaser.Scene {
 
   private onConnected(session: Session): void {
     this.session = session;
-    this.setStatus(`연결됨 (${session.transport.kind})`);
+    this.setStatus(`연결됨 (${session.kind})`);
     sfx.revive();
     this.time.delayedCall(800, () => {
       this.scene.start('Arena', { mode: 'versus', session });
@@ -168,8 +168,7 @@ export class LobbyScene extends Phaser.Scene {
 
   private leave(): void {
     sfx.ui();
-    this.session?.transport.close();
-    this.session?.signaling.close();
+    this.session?.close();
     this.scene.start('Title');
   }
 

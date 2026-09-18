@@ -37,6 +37,10 @@ export class SignalingClient {
     return this.opened;
   }
 
+  get isOpen(): boolean {
+    return this.ws.readyState === WebSocket.OPEN;
+  }
+
   send(msg: ClientToServer): void {
     this.ws.send(JSON.stringify(msg));
   }
@@ -79,16 +83,23 @@ export class SignalingClient {
     });
   }
 
-  async createRoom(): Promise<string> {
+  async createRoom(): Promise<{ code: string; token: string }> {
     await this.ready();
     this.send({ t: 'create_room' });
-    return (await this.waitFor('room_created')).code;
+    const msg = await this.waitFor('room_created');
+    return { code: msg.code, token: msg.token };
   }
 
-  async joinRoom(code: string): Promise<void> {
+  async joinRoom(code: string): Promise<{ token: string }> {
     await this.ready();
     this.send({ t: 'join_room', code });
-    await this.waitFor('room_joined');
+    return { token: (await this.waitFor('room_joined')).token };
+  }
+
+  async rejoin(code: string, token: string): Promise<void> {
+    await this.ready();
+    this.send({ t: 'rejoin', code, token });
+    await this.waitFor('rejoined', 4000);
   }
 
   close(): void {

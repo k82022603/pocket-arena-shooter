@@ -12,6 +12,8 @@ interface ResultData {
   summary: MatchSummary | null;
   localId: 0 | 1;
   session?: Session;
+  // 연결 문제로 끝난 경우의 안내 문구
+  note?: string;
 }
 
 interface StatRow {
@@ -72,6 +74,8 @@ export class ResultScene extends Phaser.Scene {
       if (summary.coop) parts.push(`코어 ${summary.coop.coreHp}/${COOP.coreMaxHp}`);
       subtitle = subtitle ? `${subtitle}  ·  ${parts.join('  ·  ')}` : parts.join('  ·  ');
     }
+    if (data.note) subtitle = subtitle ? `${data.note}  ·  ${subtitle}` : data.note;
+    const canRematch = !data.session || data.session.connected;
 
     makeLabel(this, cx, height * 0.11, title, 44).setColor(
       outcome.mode === 'duel' ? (online && outcome.winner !== data.localId ? '#ff8a80' : '#ffe066') : outcome.won ? '#69f0ae' : '#ff8a80',
@@ -88,14 +92,14 @@ export class ResultScene extends Phaser.Scene {
     makeLabel(this, cx, height * 0.8, recordText, 14).setColor('#8fa3c8');
 
     const btnY = height * 0.9;
-    makeButton(this, cx - 90, btnY, '다시 하기', () => {
+    const rematch = makeButton(this, cx - 90, btnY, '다시 하기', () => {
       sfx.ui();
       this.scene.start('Arena', data.session ? { mode: 'versus', session: data.session } : { mode: 'solo' });
     }).setFontSize(20);
+    if (!canRematch) rematch.setAlpha(0.4).disableInteractive();
     makeButton(this, cx + 90, btnY, '타이틀로', () => {
       sfx.ui();
-      data.session?.transport.close();
-      data.session?.signaling.close();
+      data.session?.close();
       this.scene.start('Title');
     }).setFontSize(20);
   }

@@ -79,21 +79,32 @@ export class WebRtcTransport implements Transport {
     this.signaling.send({ t: 'signal', data });
   }
 
+  // 재협상 중에는 이전 협상의 answer/ice가 늦게 도착할 수 있으므로 상태에 맞지 않는 신호는 조용히 버린다.
   private async handleSignal(data: SignalPayload): Promise<void> {
-    switch (data.kind) {
-      case 'offer': {
-        await this.pc.setRemoteDescription({ type: 'offer', sdp: data.sdp });
-        const answer = await this.pc.createAnswer();
-        await this.pc.setLocalDescription(answer);
-        this.signal({ kind: 'answer', sdp: answer.sdp ?? '' });
-        return;
+    if (this.closed) return;
+    try {
+      switch (data.kind) {
+        case 'offer': {
+          if (this.role !== 'guest' || this.pc.signalingState !== 'stable') return;
+          await this.pc.setRemoteDescription({ type: 'offer', sdp: data.sdp });
+          const answer = await this.pc.createAnswer();
+          await this.pc.setLocalDescription(answer);
+          this.signal({ kind: 'answer', sdp: answer.sdp ?? '' });
+          return;
+        }
+        case 'answer':
+          if (this.pc.signalingState !== 'have-local-offer') return;
+          await this.pc.setRemoteDescription({ type: 'answer', sdp: data.sdp });
+          return;
+        case 'ice':
+          if (!this.pc.remoteDescription) return;
+          await this.pc.addIceCandidate(data.candidate);
+          return;
+        case 'use_relay':
+          return;
       }
-      case 'answer':
-        await this.pc.setRemoteDescription({ type: 'answer', sdp: data.sdp });
-        return;
-      case 'ice':
-        await this.pc.addIceCandidate(data.candidate);
-        return;
+    } catch (err) {
+      console.warn('[net] 신호 처리 무시:', (err as Error).message);
     }
   }
 
@@ -116,7 +127,13 @@ export class WebRtcTransport implements Transport {
         const input = this.channels.input;
         const event = this.channels.event;
         if (input?.readyState === 'open' && event?.readyState === 'open') return resolve();
-        if (performance.now() > deadline) return reject(new Error('webrtc connect timeout'));
+        if (performance.now() > deadline) {
+          return reject(
+            new Error(
+              `webrtc connect timeout (conn=${this.pc.connectionState} ice=${this.pc.iceConnectionState} sig=${this.pc.signalingState} input=${input?.readyState ?? 'none'} event=${event?.readyState ?? 'none'})`,
+            ),
+          );
+        }
         setTimeout(tick, 50);
       };
       tick();

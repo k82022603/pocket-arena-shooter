@@ -12,7 +12,14 @@ export interface GameSync {
   renderState(nowMs: number): RenderState;
   outcome(): Outcome | null;
   summary(): MatchSummary | null;
+  // 재접속 직후: 버퍼를 비우고 상대에게 필요한 상태(캐릭터, 스냅샷)를 다시 보낸다.
+  resync(): void;
   debugInfo(): string;
+}
+
+export interface SyncLink {
+  readonly rtt: number;
+  send(channel: Channel, data: Uint8Array): void;
 }
 
 // 게스트는 상대·탄환을 최신 스냅샷보다 이만큼 과거 시점으로 보간해 그린다 (60Hz 기준 100ms).
