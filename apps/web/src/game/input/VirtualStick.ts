@@ -8,6 +8,8 @@ export interface StickVector {
 
 export class VirtualStick {
   readonly vector: StickVector = { x: 0, y: 0, magnitude: 0 };
+  // 키보드·마우스 조작이 켜지면 마우스 포인터는 무시하고 터치만 받는다.
+  touchOnly = false;
 
   private pointerId: number | null = null;
   private originX = 0;
@@ -40,6 +42,7 @@ export class VirtualStick {
 
   private onDown(p: Phaser.Input.Pointer): void {
     if (this.pointerId !== null || !this.inZone(p)) return;
+    if (this.touchOnly && !p.wasTouch) return;
     this.pointerId = p.id;
     this.originX = p.x;
     this.originY = p.y;

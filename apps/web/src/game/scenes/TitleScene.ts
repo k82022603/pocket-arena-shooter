@@ -77,6 +77,8 @@ export class TitleScene extends Phaser.Scene {
     makeButton(this, rx, btnY + step, '방 만들기', () => this.go('Lobby', { role: 'host' })).setFontSize(24);
     makeButton(this, rx, btnY + step * 2, '참가하기', () => this.go('Lobby', { role: 'guest' })).setFontSize(24);
 
+    makeLabel(this, rx, height * 0.97, '터치: 왼쪽 드래그 이동 · 오른쪽 드래그 조준/발사   |   PC: WASD 이동 · 마우스 조준 · 클릭 발사 · Shift 대시', 11).setColor('#6f7fa3');
+
     this.muteButton = makeButton(this, width - 44, 30, '', () => this.toggleMute()).setFontSize(18);
     this.refreshMute();
 

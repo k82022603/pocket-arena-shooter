@@ -6,6 +6,7 @@ import type { FailReason } from '../../net/session';
 import type { Unsubscribe } from '../../net/transport';
 import type { Outcome } from '../../sim/core';
 import { VirtualStick } from '../input/VirtualStick';
+import { DesktopControls } from '../input/DesktopControls';
 import { Fx } from '../fx/Fx';
 import { LOOKS, drawFatima } from '../fx/Fatima';
 import { addPortraitCard } from '../fx/Portraits';
@@ -59,6 +60,8 @@ export class ArenaScene extends Phaser.Scene {
   private ended = false;
   private moveStick!: VirtualStick;
   private aimStick!: VirtualStick;
+  private desktop!: DesktopControls;
+  private lastRender: RenderState | null = null;
   private dashPressed = false;
 
   private readonly fx = new Fx();
@@ -172,8 +175,16 @@ export class ArenaScene extends Phaser.Scene {
       .setDepth(71)
       .setVisible(false);
 
+    // 스틱보다 먼저 등록해야 같은 포인터 이벤트에서 스틱이 마우스를 잡기 전에 터치 전용으로 전환된다.
+    this.desktop = new DesktopControls(this, (active) => {
+      this.moveStick.touchOnly = active;
+      this.aimStick.touchOnly = active;
+    });
     this.moveStick = new VirtualStick(this, 'left');
     this.aimStick = new VirtualStick(this, 'right');
+    this.moveStick.touchOnly = this.desktop.active;
+    this.aimStick.touchOnly = this.desktop.active;
+    this.lastRender = null;
 
     const dash = makeButton(this, this.scale.width - 90, this.scale.height * 0.35, 'DASH', () => {});
     dash.setDepth(102);
@@ -273,6 +284,21 @@ export class ArenaScene extends Phaser.Scene {
       skill: false,
     };
     this.dashPressed = false;
+
+    const me = this.lastRender?.players[this.sync.localId];
+    const desk = me ? this.desktop.read(this.baseX + me.x * this.worldScale, this.baseY + me.y * this.worldScale) : null;
+    if (desk) {
+      if (desk.moveX !== 0 || desk.moveY !== 0 || !this.moveStick.active) {
+        frame.moveX = desk.moveX;
+        frame.moveY = desk.moveY;
+      }
+      if (!this.aimStick.active) {
+        frame.aimX = desk.aimX;
+        frame.aimY = desk.aimY;
+        frame.fire = desk.fire;
+      }
+      frame.dash = frame.dash || desk.dash;
+    }
     return frame;
   }
 
@@ -405,6 +431,7 @@ export class ArenaScene extends Phaser.Scene {
   private render(): void {
     const now = performance.now();
     const rs = this.sync.renderState(now);
+    this.lastRender = rs;
     this.detectEvents(rs, now);
 
     const shake = this.fx.shakeOffset();
@@ -635,5 +662,6 @@ export class ArenaScene extends Phaser.Scene {
     this.scale.off('resize', this.layout, this);
     this.moveStick.destroy();
     this.aimStick.destroy();
+    this.desktop.destroy();
   }
 }

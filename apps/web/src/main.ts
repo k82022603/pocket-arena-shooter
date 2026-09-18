@@ -21,7 +21,8 @@ const config: Phaser.Types.Core.GameConfig = {
   scene: [BootScene, TitleScene, LobbyScene, ArenaScene, ResultScene],
 };
 
-new Phaser.Game(config);
+const game = new Phaser.Game(config);
+if (new URLSearchParams(location.search).has('debug')) (window as unknown as { __game?: Phaser.Game }).__game = game;
 
 // iOS/Chrome 자동재생 정책: 첫 사용자 제스처에서 오디오 컨텍스트를 연다.
 for (const type of ['pointerdown', 'touchstart', 'keydown'] as const) {
