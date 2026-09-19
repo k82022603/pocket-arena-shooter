@@ -16,6 +16,7 @@ import type { Channel, MessageHandler, Transport, Unsubscribe } from '../apps/we
 import { waveComposition } from '../apps/web/src/sim/coop';
 import { PICKUP } from '../apps/web/src/sim/weapons';
 import { BOT_SKILL, DIFFICULTY_ORDER, type Difficulty } from '../apps/web/src/sim/difficulty';
+import { assistAim } from '../apps/web/src/game/aimAssist';
 import { GuestSync } from '../apps/web/src/game/sync/GuestSync';
 import type { SyncLink } from '../apps/web/src/game/sync/GameSync';
 
@@ -721,6 +722,27 @@ check('봇이 가만히 선 상대를 이김', b.players[0].hp === 0 && b.elapse
   }
   const gapAfter = Math.hypot(run.coop!.enemies[0]!.x - run.players[0].x, run.coop!.enemies[0]!.y - run.players[0].y);
   check('척후병에게서 달아나면 떨어진다 (가장 느린 에스트 기준)', hits <= 1 && gapAfter > 60, `1초간 피격 ${hits}회, 거리 ${gapAfter.toFixed(0)}px`);
+}
+
+// 조준 보정: 조준 방향 앞 18도 안의 적에게만 붙는다
+{
+  const deg = (d: number) => [Math.cos((d * Math.PI) / 180), Math.sin((d * Math.PI) / 180)] as const;
+  const enemy = { x: 400, y: 0 }; // 원점에서 정확히 0도 방향, 400px
+  const [x10, y10] = deg(10);
+  const near = assistAim(0, 0, x10, y10, [enemy]);
+  const [x25, y25] = deg(25);
+  const far = assistAim(0, 0, x25, y25, [enemy]);
+  check(
+    '조준 보정: 18도 안이면 적에게 붙고 밖이면 그대로',
+    near.index === 0 && Math.abs(near.aimY) < 1e-9 && far.index === -1 && Math.abs(far.aimY - y25) < 1e-9,
+  );
+
+  const pick = assistAim(0, 0, 1, 0, [
+    { x: 300, y: 80 }, // 약 15도
+    { x: 500, y: 30 }, // 약 3.4도, 더 멀지만 조준에 더 가깝다
+    { x: 2000, y: 0 }, // 0도지만 사거리 밖
+  ]);
+  check('조준 보정: 조준에 가장 가까운 적을 고르고 사거리 밖은 무시', pick.index === 1, `고른 적 ${pick.index}`);
 }
 
 console.log(failures === 0 ? '\n모든 검사 통과' : `\n${failures}개 실패`);

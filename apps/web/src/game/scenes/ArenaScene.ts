@@ -20,6 +20,8 @@ import { HostSync } from '../sync/HostSync';
 import { GuestSync } from '../sync/GuestSync';
 import { selectedCharacter, selectedMode } from './TitleScene';
 import { selectedDifficulty } from '../difficulty';
+import { assistAim, type AssistTarget } from '../aimAssist';
+import { aimAssistOn } from '../aimSetting';
 import { selectedLoadout } from '../loadout';
 import { MatchRecorder, SAMPLE_INTERVAL_TICKS } from '../recorder';
 
@@ -81,6 +83,9 @@ export class ArenaScene extends Phaser.Scene {
   private focusWarn!: Phaser.GameObjects.Text;
   private hurtAt = -1e9;
   private lastMove: [number, number] = [0, 0];
+  // 조준 보정: 협동과 봇 상대 대전에서만. 사람끼리의 대전은 조준 실력이 승부라 쓰지 않는다
+  private assist = false;
+  private assistPos: { x: number; y: number } | null = null;
   private recorder!: MatchRecorder;
   private slowFrames = 0;
   private slowSince = 0;
@@ -195,6 +200,8 @@ export class ArenaScene extends Phaser.Scene {
     this.hudGfx = this.add.graphics().setDepth(49);
     this.hurtVignette = this.add.graphics().setDepth(48);
     this.hurtAt = -1e9;
+    this.assist = aimAssistOn(this) && (mode === 'coop' || this.sync.kind === 'solo');
+    this.assistPos = null;
     this.hud = new URLSearchParams(location.search).has('debug')
       ? this.add.text(hl.barX, hl.rowY(1) + hl.cardH / 2 + u(8), '', { fontFamily: FONT, fontSize: fontPx(this, 13), color: '#8fa3c8' }).setDepth(50)
       : null;
@@ -442,7 +449,24 @@ export class ArenaScene extends Phaser.Scene {
       frame.dash = frame.dash || desk.dash;
       if (desk.swapTo > 0) frame.swapTo = desk.swapTo;
     }
+    this.applyAssist(frame, me ?? null);
     return frame;
+  }
+
+  // 쏘는 중이면 조준 방향 앞 18도 안의 적에게 조준을 붙인다. 기준은 내 화면에 보이는 위치다.
+  private applyAssist(frame: InputFrame, me: PlayerState | null): void {
+    this.assistPos = null;
+    const rs = this.lastRender;
+    if (!this.assist || !me || !rs || me.hp <= 0 || !frame.fire) return;
+    const targets: AssistTarget[] =
+      rs.mode === 'coop'
+        ? (rs.coop?.enemies ?? [])
+        : rs.players.filter((p) => p.id !== this.sync.localId && p.hp > 0);
+    const r = assistAim(me.x, me.y, frame.aimX, frame.aimY, targets);
+    if (r.index < 0) return;
+    frame.aimX = r.aimX;
+    frame.aimY = r.aimY;
+    this.assistPos = { x: targets[r.index]!.x, y: targets[r.index]!.y };
   }
 
   // 렌더 상태를 프레임 간 비교해 연출 이벤트를 만든다. 솔로/호스트/게스트 모두 같은 경로를 탄다.
@@ -663,6 +687,11 @@ export class ArenaScene extends Phaser.Scene {
 
     if (this.desktop.active) this.renderAimGuide(rs, now);
     this.fx.drawFront(g);
+    // 보정이 붙은 적에 얇은 고리를 둘러 어디로 쏘고 있는지 보여 준다
+    if (this.assistPos) {
+      g.lineStyle(2, 0xffffff, 0.55);
+      g.strokeCircle(this.assistPos.x, this.assistPos.y, 30);
+    }
     this.renderHud(rs);
   }
 

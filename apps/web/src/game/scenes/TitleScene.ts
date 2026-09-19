@@ -7,6 +7,7 @@ import { sfx } from '../audio/Sfx';
 import { LOADOUTS, WEAPONS } from '../../sim/weapons';
 import { selectedLoadout, setLoadout } from '../loadout';
 import { selectedDifficulty, setDifficulty } from '../difficulty';
+import { aimAssistOn, setAimAssist } from '../aimSetting';
 import { DIFFICULTY_LABEL, DIFFICULTY_ORDER } from '../../sim/difficulty';
 import { clearPendingJoin, pendingJoinCode } from '../../net/pairing';
 import { canInstall, isStandalone, onInstallAvailabilityChange, promptInstall } from '../../pwa';
@@ -161,6 +162,20 @@ export class TitleScene extends Phaser.Scene {
       96,
       36,
     );
+    // 조준 보정: 협동과 봇 상대 대전에서 조준 방향 앞 18도 안의 적에게 붙여 쏜다. 켜져 있으면 강조색 테두리
+    // 제목과 겹치지 않게 스킨 버튼 바로 아래 줄에 둔다
+    const assist = makeButton(this, width - u(28 + 18 + 8 + 48), u(70), '', () => {
+      setAimAssist(this, !aimAssistOn(this));
+      sfx.ui();
+      paintAssist();
+    }, TYPE.caption, 'ghost');
+    const paintAssist = (): void => {
+      const on = aimAssistOn(this);
+      assist.setText(on ? '조준 보정 켬' : '조준 보정 끔');
+      sizeButton(assist, 100, 36);
+      styleButton(assist, on ? 'chipOn' : 'ghost', this.accent());
+    };
+    paintAssist();
     this.refreshMute();
 
     this.installButton = sizeButton(makeButton(this, width - u(28), u(70), '설치', () => void this.install(), TYPE.caption, 'ghost'), 36, 28).setVisible(
