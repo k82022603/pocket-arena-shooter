@@ -79,6 +79,7 @@ const DOCS = [
   'docs/모바일_웹_슈팅게임_기획서.md',
   'docs/테스트_방식과_헤드리스.md',
   'docs/회고.md',
+  'docs/프로그램_명세서.md',
 ];
 let countFailures = 0;
 for (const file of DOCS) {
