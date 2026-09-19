@@ -7,7 +7,7 @@ import { encodeRematch, isRematch } from '../../sim/serialize';
 import { sfx } from '../audio/Sfx';
 import { addPortraitCard } from '../fx/Portraits';
 import { applyResult } from '../record';
-import { FONT, makeButton, makeLabel } from '../ui';
+import { FONT, fontPx, makeButton, makeLabel, padButton, px, uiScale } from '../ui';
 import { coopResultText } from '../outcomeText';
 import { downloadRecord, type MatchRecorder } from '../recorder';
 
@@ -68,6 +68,7 @@ export class ResultScene extends Phaser.Scene {
     this.rematchTimer = null;
     const { width, height } = this.scale;
     const cx = width / 2;
+    const u = (n: number) => px(this, n);
     const { outcome, summary } = data;
     const online = data.session !== undefined;
 
@@ -91,11 +92,11 @@ export class ResultScene extends Phaser.Scene {
     makeLabel(this, cx, height * 0.08, title, 40).setColor(
       outcome.mode === 'duel' ? (outcome.winner !== data.localId ? '#ff8a80' : '#ffe066') : outcome.won ? '#69f0ae' : '#ff8a80',
     );
-    if (subtitle) makeLabel(this, cx, height * 0.08 + 34, subtitle, 14);
+    if (subtitle) makeLabel(this, cx, height * 0.08 + u(34), subtitle, 14);
 
     // 폰 가로(높이 390 안팎)에서는 아래 버튼 줄과 겹치지 않도록 표를 조금 올리고 줄 간격을 줄인다.
-    const compact = height < 480;
-    if (summary) this.renderTable(summary, data.localId, height * (compact ? 0.34 : 0.37), compact ? 21 : 24);
+    const compact = height / uiScale(this) < 480;
+    if (summary) this.renderTable(summary, data.localId, height * (compact ? 0.34 : 0.37), u(compact ? 21 : 24));
 
     const record = applyResult(outcome, data.localId, online);
     const recordText =
@@ -103,31 +104,30 @@ export class ResultScene extends Phaser.Scene {
         ? `내 전적 · 대전 ${record.duelWins}승 ${record.duelLosses}패`
         : `내 전적 · 방어 성공 ${record.coopClears}회 / 실패 ${record.coopFails}회 · 최고 웨이브 ${record.bestWave}`;
     // 아래쪽은 화면 비율이 아니라 바닥에서 잰 거리로 쌓는다. 비율로 두면 낮은 화면에서 서로 겹친다.
-    const btnY = height - 34;
-    makeLabel(this, cx, height - 96, recordText, 14).setColor('#8fa3c8');
+    const btnY = height - u(34);
+    makeLabel(this, cx, height - u(96), recordText, 14).setColor('#8fa3c8');
 
     // 이상한 일이 있었을 때 화면을 캡처해 설명하는 대신 이 파일 하나를 넘기면 된다.
     if (data.recorder) {
       const rec = data.recorder;
-      makeLabel(this, cx, height - 80, rec.summaryLine(), 11).setColor('#5c6b8a');
-      const save = makeButton(this, cx + 180, btnY, '경기 기록 저장', () => {
+      makeLabel(this, cx, height - u(80), rec.summaryLine(), 11).setColor('#5c6b8a');
+      const save = makeButton(this, cx + u(180), btnY, '경기 기록 저장', () => {
         const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
         downloadRecord(rec.toRecord(), 'arena-' + rec.toRecord().header.role + '-' + stamp + '.json');
         save.setText('저장됨');
         sfx.ui();
-      })
-        .setFontSize(15)
-        .setPadding(18, 12, 18, 12);
+      }, 15);
+      padButton(save, 18, 12);
     }
 
-    const status = makeLabel(this, cx, height - 64, '', 13).setColor('#8fa3c8');
-    const rematch = makeButton(this, cx - 160, btnY, '다시 하기', () => this.requestRematch(data, rematch, status)).setFontSize(20);
+    const status = makeLabel(this, cx, height - u(64), '', 13).setColor('#8fa3c8');
+    const rematch = makeButton(this, cx - u(160), btnY, '다시 하기', () => this.requestRematch(data, rematch, status), 20);
     if (!canRematch) rematch.setAlpha(0.4).disableInteractive();
     makeButton(this, cx, btnY, '타이틀로', () => {
       sfx.ui();
       data.session?.close();
       this.scene.start('Title');
-    }).setFontSize(20);
+    }, 20);
 
     const session = data.session;
     if (!session) return;
@@ -180,19 +180,20 @@ export class ResultScene extends Phaser.Scene {
     const rows = summary.mode === 'duel' ? DUEL_ROWS : COOP_ROWS;
     const players = summary.players.slice(0, summary.playerCount);
     const cols = players.length;
-    const labelX = cx - 150;
-    const colX = (i: number) => (cols === 1 ? cx + 60 : cx + 20 + i * 150);
+    const u = (n: number) => px(this, n);
+    const labelX = cx - u(150);
+    const colX = (i: number) => (cols === 1 ? cx + u(60) : cx + u(20) + i * u(150));
 
     // 초상은 표 양옆에 크게 세운다. 폰 가로 화면은 위아래 여유가 없어 이름 위에 두면 작아질 수밖에 없다.
     // 첫 열의 파티마는 왼쪽(항목 이름 바깥), 마지막 열은 오른쪽. 혼자면 오른쪽 하나만.
-    const tableTop = top - 14;
-    const tableBottom = top + 34 + (rows.length - 1) * rowH + 12;
+    const tableTop = top - u(14);
+    const tableBottom = top + u(34) + (rows.length - 1) * rowH + u(12);
     const midY = (tableTop + tableBottom) / 2;
-    const leftRoom = labelX - 16 - 12;
-    const rightEdge = colX(cols - 1) + 72;
-    const rightRoom = width - rightEdge - 12;
-    const wantH = Math.max(tableBottom - tableTop, Math.min(this.scale.height * 0.4, 260));
-    const cardW = Math.max(48, Math.min(wantH * 0.75, rightRoom, cols === 2 ? leftRoom : rightRoom));
+    const leftRoom = labelX - u(16) - u(12);
+    const rightEdge = colX(cols - 1) + u(72);
+    const rightRoom = width - rightEdge - u(12);
+    const wantH = Math.max(tableBottom - tableTop, Math.min(this.scale.height * 0.4, u(260)));
+    const cardW = Math.max(u(48), Math.min(wantH * 0.75, rightRoom, cols === 2 ? leftRoom : rightRoom));
     const cardH = cardW / 0.75;
 
     for (let i = 0; i < cols; i++) {
@@ -200,20 +201,20 @@ export class ResultScene extends Phaser.Scene {
       const c = CHARACTERS[p.character];
       const mine = i === localId;
       const onLeft = cols === 2 && i === 0;
-      const cardX = onLeft ? labelX - 16 - cardW / 2 : rightEdge + cardW / 2;
+      const cardX = onLeft ? labelX - u(16) - cardW / 2 : rightEdge + cardW / 2;
       addPortraitCard(this, p.character, cardX, midY, cardW, cardH, c.color, 4);
       this.add
-        .text(colX(i), top, `${c.name}${mine ? ' (나)' : ''}`, { fontFamily: FONT, fontSize: '17px', color: mine ? '#ffffff' : '#c9d1e3' })
+        .text(colX(i), top, `${c.name}${mine ? ' (나)' : ''}`, { fontFamily: FONT, fontSize: fontPx(this, 17), color: mine ? '#ffffff' : '#c9d1e3' })
         .setOrigin(0.5);
-      this.add.rectangle(colX(i), top + 16, 120, 2, c.color, 0.9);
+      this.add.rectangle(colX(i), top + u(16), u(120), 2, c.color, 0.9);
     }
 
     rows.forEach((row, r) => {
-      const y = top + 34 + r * rowH;
-      this.add.text(labelX, y, row.label, { fontFamily: FONT, fontSize: '15px', color: '#8fa3c8' }).setOrigin(0, 0.5);
+      const y = top + u(34) + r * rowH;
+      this.add.text(labelX, y, row.label, { fontFamily: FONT, fontSize: fontPx(this, 15), color: '#8fa3c8' }).setOrigin(0, 0.5);
       for (let i = 0; i < cols; i++) {
         this.add
-          .text(colX(i), y, row.value(players[i]!.stats), { fontFamily: FONT, fontSize: '16px', color: '#e6ecff' })
+          .text(colX(i), y, row.value(players[i]!.stats), { fontFamily: FONT, fontSize: fontPx(this, 16), color: '#e6ecff' })
           .setOrigin(0.5);
       }
     });

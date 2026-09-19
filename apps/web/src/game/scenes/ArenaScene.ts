@@ -13,7 +13,7 @@ import { LOOKS, drawFatima } from '../fx/Fatima';
 import { addPortraitCard } from '../fx/Portraits';
 import { sfx } from '../audio/Sfx';
 import type { CharacterId } from '../../sim/characters';
-import { FONT, makeButton } from '../ui';
+import { FONT, fontPx, makeButton, px, uiScale } from '../ui';
 import type { GameSync, RenderState } from '../sync/GameSync';
 import { SoloSync } from '../sync/SoloSync';
 import { HostSync } from '../sync/HostSync';
@@ -33,12 +33,14 @@ const PLAYER_BULLET_COLOR = 0xffe066;
 const FLASH_MS = 90;
 
 // 왼쪽 위 HUD: 초상 카드 + HP 바. 맨 윗줄이 나, 그 아래가 상대(또는 짝).
-const HUD_CARD_W = 52;
-const HUD_CARD_H = 62;
-const HUD_CARD_X = 8 + HUD_CARD_W / 2;
-const HUD_BAR_X = HUD_CARD_X + HUD_CARD_W / 2 + 8;
-const HUD_BAR_W = 128;
-const hudRowY = (slot: 0 | 1): number => 8 + HUD_CARD_H / 2 + slot * (HUD_CARD_H + 6);
+// 값은 폰 가로 기준이고, 화면 크기에 따라 UI 배율(ui.ts)을 곱해 쓴다.
+function hudLayout(s: number) {
+  const cardW = 52 * s;
+  const cardH = 62 * s;
+  const cardX = 8 * s + cardW / 2;
+  const barX = cardX + cardW / 2 + 8 * s;
+  return { s, cardW, cardH, cardX, barX, barW: 128 * s, rowY: (slot: 0 | 1) => 8 * s + cardH / 2 + slot * (cardH + 6 * s) };
+}
 
 interface BulletMemo {
   x: number;
@@ -76,6 +78,7 @@ export class ArenaScene extends Phaser.Scene {
   private slowSince = 0;
   private recordTick = 0;
   private waitingSince = 0;
+  private hudL = hudLayout(1);
   private hudPortraits: [Phaser.GameObjects.Container | null, Phaser.GameObjects.Container | null] = [null, null];
   private hudPortraitIds: [CharacterId | null, CharacterId | null] = [null, null];
   private reconnectShade!: Phaser.GameObjects.Rectangle;
@@ -85,6 +88,8 @@ export class ArenaScene extends Phaser.Scene {
   private aimStick!: VirtualStick;
   private desktop!: DesktopControls;
   private weaponButton!: Phaser.GameObjects.Text;
+  private dashButton!: Phaser.GameObjects.Text;
+  private exitButton!: Phaser.GameObjects.Text;
   private lastRender: RenderState | null = null;
   private dashPressed = false;
   private swapRequest = 0;
@@ -175,9 +180,13 @@ export class ArenaScene extends Phaser.Scene {
     this.nameLabels = [this.makeNameLabel(), this.makeNameLabel()];
 
     // 화면을 가리지 않도록 평소에는 초상 옆 HP 바만 그리고, 진단 정보는 ?debug=1 일 때만 보여준다
+    const ui = uiScale(this);
+    const u = (n: number) => px(this, n);
+    this.hudL = hudLayout(ui);
+    const hl = this.hudL;
     this.hudGfx = this.add.graphics().setDepth(49);
     this.hud = new URLSearchParams(location.search).has('debug')
-      ? this.add.text(HUD_BAR_X, hudRowY(1) + HUD_CARD_H / 2 + 8, '', { fontFamily: FONT, fontSize: '13px', color: '#8fa3c8' }).setDepth(50)
+      ? this.add.text(hl.barX, hl.rowY(1) + hl.cardH / 2 + u(8), '', { fontFamily: FONT, fontSize: fontPx(this, 13), color: '#8fa3c8' }).setDepth(50)
       : null;
     this.recorder = new MatchRecorder({
       role: this.sync.kind,
@@ -194,27 +203,27 @@ export class ArenaScene extends Phaser.Scene {
 
     // 맨 위 줄이 내 것임을 못 박는다. 2인일 때만 보여준다.
     this.hudMe = this.add
-      .text(HUD_BAR_X + HUD_BAR_W + 6, hudRowY(0), '나', { fontFamily: FONT, fontSize: '12px', color: '#8fa3c8' })
+      .text(hl.barX + hl.barW + u(6), hl.rowY(0), '나', { fontFamily: FONT, fontSize: fontPx(this, 12), color: '#8fa3c8' })
       .setOrigin(0, 0.5)
       .setDepth(50)
       .setVisible(false);
     this.hudPortraits = [null, null];
     this.hudPortraitIds = [null, null];
     this.banner = this.add
-      .text(this.scale.width / 2, 58, '', { fontFamily: FONT, fontSize: '22px', color: '#ffe066' })
+      .text(this.scale.width / 2, u(58), '', { fontFamily: FONT, fontSize: fontPx(this, 22), color: '#ffe066' })
       .setOrigin(0.5, 0)
       .setDepth(50);
     this.slowWarn = this.add
-      .text(this.scale.width / 2, 90, '', { fontFamily: FONT, fontSize: '13px', color: '#ff8a80' })
+      .text(this.scale.width / 2, u(90), '', { fontFamily: FONT, fontSize: fontPx(this, 13), color: '#ff8a80' })
       .setOrigin(0.5, 0)
       .setDepth(50);
     this.waveText = this.add
       .text(this.scale.width / 2, this.scale.height / 2, '', {
         fontFamily: FONT,
-        fontSize: '64px',
+        fontSize: fontPx(this, 64),
         color: '#ffe066',
         stroke: '#000000',
-        strokeThickness: 6,
+        strokeThickness: u(6),
       })
       .setOrigin(0.5)
       .setDepth(60)
@@ -225,7 +234,7 @@ export class ArenaScene extends Phaser.Scene {
       .setDepth(70)
       .setVisible(false);
     this.reconnectText = this.add
-      .text(this.scale.width / 2, this.scale.height / 2, '', { fontFamily: FONT, fontSize: '26px', color: '#ffffff', align: 'center' })
+      .text(this.scale.width / 2, this.scale.height / 2, '', { fontFamily: FONT, fontSize: fontPx(this, 26), color: '#ffffff', align: 'center' })
       .setOrigin(0.5)
       .setDepth(71)
       .setVisible(false);
@@ -235,20 +244,19 @@ export class ArenaScene extends Phaser.Scene {
       this.moveStick.touchOnly = active;
       this.aimStick.touchOnly = active;
     });
-    this.moveStick = new VirtualStick(this, 'left');
-    this.aimStick = new VirtualStick(this, 'right');
+    this.moveStick = new VirtualStick(this, 'left', u(60));
+    this.aimStick = new VirtualStick(this, 'right', u(60));
     this.moveStick.touchOnly = this.desktop.active;
     this.aimStick.touchOnly = this.desktop.active;
     this.lastRender = null;
 
-    const dash = makeButton(this, this.scale.width - 90, this.scale.height * 0.35, 'DASH', () => {});
+    const dash = makeButton(this, this.scale.width - u(90), this.scale.height * 0.35, 'DASH', () => {});
     dash.setDepth(102);
+    this.dashButton = dash;
     dash.on('pointerdown', () => (this.dashPressed = true));
 
     // 무기 교체: 탭하면 다음 기본 무기로, PC는 1~3 키
-    this.weaponButton = makeButton(this, this.scale.width - 90, this.scale.height * 0.5, '', () => {})
-      .setFontSize(14)
-      .setDepth(102);
+    this.weaponButton = makeButton(this, this.scale.width - u(90), this.scale.height * 0.5, '', () => {}, 14).setDepth(102);
     this.weaponButton.on('pointerdown', () => {
       const options = LOADOUTS[local];
       const current = this.lastRender?.players[this.sync.localId].baseWeapon ?? options[0]!;
@@ -256,7 +264,7 @@ export class ArenaScene extends Phaser.Scene {
       this.swapRequest = next + 1;
     });
 
-    makeButton(this, this.scale.width - 60, 30, '✕', () => this.exit()).setDepth(102).setFontSize(18);
+    this.exitButton = makeButton(this, this.scale.width - u(60), u(30), '✕', () => this.exit(), 18).setDepth(102);
 
     this.scale.on('resize', this.layout, this);
     this.layout();
@@ -865,26 +873,28 @@ export class ArenaScene extends Phaser.Scene {
     const g = this.hudGfx;
     g.clear();
     this.hudMe.setVisible(rs.playerCount === 2);
-    const x = HUD_BAR_X;
-    const w = HUD_BAR_W;
+    const hl = this.hudL;
+    const k = hl.s;
+    const x = hl.barX;
+    const w = hl.barW;
     for (const p of rs.players) {
       if (p.id >= rs.playerCount) continue;
       const character = CHARACTERS[p.character];
-      const y = hudRowY(this.hudSlot(p.id));
+      const y = hl.rowY(this.hudSlot(p.id));
       const ratio = Math.max(0, p.hp / character.stats.maxHp);
       g.fillStyle(0x05080f, 0.75);
-      g.fillRoundedRect(x - 2, y - 9, w + 4, 18, 4);
+      g.fillRoundedRect(x - 2 * k, y - 9 * k, w + 4 * k, 18 * k, 4 * k);
       g.fillStyle(0x1b2540, 1);
-      g.fillRect(x, y - 6, w, 12);
+      g.fillRect(x, y - 6 * k, w, 12 * k);
       g.fillStyle(p.id === this.sync.localId ? character.color : 0xff6b6b, 1);
-      g.fillRect(x, y - 6, w * ratio, 12);
+      g.fillRect(x, y - 6 * k, w * ratio, 12 * k);
       if (p.weaponTicks > 0) {
         g.fillStyle(WEAPONS[p.weapon].color, 1);
-        g.fillRect(x, y + 7, w * (p.weaponTicks / WEAPONS[p.weapon].durationTicks), 3);
+        g.fillRect(x, y + 7 * k, w * (p.weaponTicks / WEAPONS[p.weapon].durationTicks), 3 * k);
       }
       if (p.boostTicks > 0) {
         g.fillStyle(PICKUP_COLORS[3], 1);
-        g.fillRect(x, y + 11, w * (p.boostTicks / PICKUP.boostTicks), 3);
+        g.fillRect(x, y + 11 * k, w * (p.boostTicks / PICKUP.boostTicks), 3 * k);
       }
     }
   }
@@ -896,7 +906,7 @@ export class ArenaScene extends Phaser.Scene {
       if (this.hudPortraitIds[slot] !== wanted) {
         this.hudPortraits[slot]?.destroy();
         this.hudPortraits[slot] = wanted
-          ? addPortraitCard(this, wanted, HUD_CARD_X, hudRowY(slot), HUD_CARD_W, HUD_CARD_H, CHARACTERS[wanted].color, 2)?.setDepth(50) ??
+          ? addPortraitCard(this, wanted, this.hudL.cardX, this.hudL.rowY(slot), this.hudL.cardW, this.hudL.cardH, CHARACTERS[wanted].color, 2)?.setDepth(50) ??
             null
           : null;
         this.hudPortraitIds[slot] = wanted;
@@ -938,6 +948,12 @@ export class ArenaScene extends Phaser.Scene {
     this.world.setScale(this.worldScale);
     this.world.setPosition(this.baseX, this.baseY);
     this.banner.setX(width / 2);
+    this.slowWarn.setX(width / 2);
+    // 오른쪽 버튼은 화면 가장자리를 따라간다 (창 크기 변경·화면 회전)
+    const u = (n: number) => px(this, n);
+    this.dashButton.setPosition(width - u(90), height * 0.35);
+    this.weaponButton.setPosition(width - u(90), height * 0.5);
+    this.exitButton.setPosition(width - u(60), u(30));
     this.waveText.setPosition(width / 2, height / 2);
     this.reconnectShade.setSize(width, height);
     this.reconnectText.setPosition(width / 2, height / 2);
