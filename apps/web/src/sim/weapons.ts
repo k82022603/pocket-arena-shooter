@@ -44,6 +44,9 @@ export function isLoadoutWeapon(kind: WeaponKind): boolean {
   return WEAPONS[kind].durationTicks === 0;
 }
 
+// 교체 직후 잠깐 못 쏘게 해서 연타로 이득 보는 것을 막는다
+export const SWAP_DELAY_TICKS = 18;
+
 // 0 힐팩, 1 산탄총, 2 레이저, 3 속도 부스트
 export type PickupKind = 0 | 1 | 2 | 3;
 

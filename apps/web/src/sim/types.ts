@@ -11,6 +11,8 @@ export interface InputFrame {
   fire: boolean;
   dash: boolean;
   skill: boolean;
+  // 0이면 그대로, 1~3이면 그 번호의 기본 무기로 교체 (한 틱짜리 펄스)
+  swapTo: number;
 }
 
 export const EMPTY_INPUT: Readonly<InputFrame> = Object.freeze({
@@ -21,6 +23,7 @@ export const EMPTY_INPUT: Readonly<InputFrame> = Object.freeze({
   fire: false,
   dash: false,
   skill: false,
+  swapTo: 0,
 });
 
 export interface PlayerState {

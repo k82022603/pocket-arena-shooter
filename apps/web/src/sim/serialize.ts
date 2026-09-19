@@ -50,7 +50,10 @@ export function encodeInput(tick: number, frames: readonly InputFrame[]): Uint8A
     view.setInt8(o + 1, quantize(f.moveY));
     view.setInt8(o + 2, quantize(f.aimX));
     view.setInt8(o + 3, quantize(f.aimY));
-    view.setUint8(o + 4, (f.fire ? BIT_FIRE : 0) | (f.dash ? BIT_DASH : 0) | (f.skill ? BIT_SKILL : 0));
+    view.setUint8(
+      o + 4,
+      (f.fire ? BIT_FIRE : 0) | (f.dash ? BIT_DASH : 0) | (f.skill ? BIT_SKILL : 0) | ((f.swapTo & 3) << 3),
+    );
   }
   return out;
 }
@@ -73,6 +76,7 @@ export function decodeInput(buf: Uint8Array): TickedInput[] | null {
         fire: (bits & BIT_FIRE) !== 0,
         dash: (bits & BIT_DASH) !== 0,
         skill: (bits & BIT_SKILL) !== 0,
+        swapTo: (bits >> 3) & 3,
       },
     });
   }

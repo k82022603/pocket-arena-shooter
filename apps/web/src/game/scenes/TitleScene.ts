@@ -6,6 +6,7 @@ import { addPortraitCard } from '../fx/Portraits';
 import { sfx } from '../audio/Sfx';
 import { LOADOUTS, WEAPONS } from '../../sim/weapons';
 import { selectedLoadout, setLoadout } from '../loadout';
+import { REGISTRY_PENDING_JOIN } from '../../net/pairing';
 import { canInstall, isStandalone, onInstallAvailabilityChange, promptInstall } from '../../pwa';
 import { FONT, makeButton, makeLabel } from '../ui';
 
@@ -78,11 +79,32 @@ export class TitleScene extends Phaser.Scene {
 
     const btnY = height * 0.74;
     const step = 50;
-    makeButton(this, rx - 118, btnY, '혼자 하기', () => this.go('Arena', { mode: 'solo' })).setFontSize(20);
-    makeButton(this, rx, btnY + step, '방 만들기', () => this.go('Lobby', { role: 'host' })).setFontSize(20);
-    makeButton(this, rx + 118, btnY, '참가하기', () => this.go('Lobby', { role: 'guest' })).setFontSize(20);
+    const pending = this.registry.get(REGISTRY_PENDING_JOIN) as string | undefined;
+    if (pending) {
+      // QR/링크로 들어온 경우: 캐릭터·무기를 고른 뒤 이 방으로 들어간다
+      makeLabel(this, rx, btnY - 34, `초대받은 방 · 코드 ${pending}`, 15).setColor('#ffe066');
+      makeButton(this, rx, btnY + 4, '이 파티마로 참가', () => {
+        this.registry.remove(REGISTRY_PENDING_JOIN);
+        this.go('Lobby', { role: 'guest', code: pending });
+      }).setFontSize(22);
+      makeButton(this, rx, btnY + 4 + step, '취소', () => {
+        this.registry.remove(REGISTRY_PENDING_JOIN);
+        sfx.ui();
+        this.scene.restart();
+      }).setFontSize(16);
+    } else {
+      makeButton(this, rx - 118, btnY, '혼자 하기', () => this.go('Arena', { mode: 'solo' })).setFontSize(20);
+      makeButton(this, rx, btnY + step, '방 만들기', () => this.go('Lobby', { role: 'host' })).setFontSize(20);
+      makeButton(this, rx + 118, btnY, '참가하기', () => this.go('Lobby', { role: 'guest' })).setFontSize(20);
+    }
 
-    makeLabel(this, rx, height * 0.97, '터치: 왼쪽 드래그 이동 · 오른쪽 드래그 조준/발사   |   PC: WASD 이동 · 마우스 조준 · 클릭 발사 · Shift 대시', 11).setColor('#6f7fa3');
+    makeLabel(
+      this,
+      width / 2,
+      height * 0.97,
+      '터치: 왼쪽 드래그 이동 · 오른쪽 드래그 조준/발사 · 무기 버튼 탭으로 교체   |   PC: WASD 이동 · 마우스 조준 · 클릭 발사 · Shift 대시 · 1~3 무기 교체',
+      11,
+    ).setColor('#6f7fa3');
 
     this.muteButton = makeButton(this, width - 44, 30, '', () => this.toggleMute()).setFontSize(18);
     this.refreshMute();

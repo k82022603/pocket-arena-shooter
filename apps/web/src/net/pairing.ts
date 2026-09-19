@@ -2,14 +2,30 @@ import { ROOM_CODE_LENGTH } from '@shooter/protocol';
 
 export const JOIN_PARAM = 'join';
 
+// QR/링크로 들어왔을 때 타이틀에서 캐릭터를 고를 때까지 방 코드를 담아두는 레지스트리 키
+export const REGISTRY_PENDING_JOIN = 'pendingJoin';
+
 const CODE_RE = new RegExp(`^\\d{${ROOM_CODE_LENGTH}}$`);
 
 export function isRoomCode(text: string): boolean {
   return CODE_RE.test(text);
 }
 
+const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
+
+export function isLocalOnlyHost(): boolean {
+  return LOCAL_HOSTS.has(location.hostname);
+}
+
+// 노트북에서 localhost로 열었다면 폰이 닿을 수 없으므로, 개발 서버가 알려준 LAN 주소로 바꿔 QR에 넣는다.
 export function joinUrlFor(code: string): string {
   const url = new URL(location.href);
+  if (isLocalOnlyHost() && __LAN_ORIGIN__) {
+    const lan = new URL(__LAN_ORIGIN__);
+    url.protocol = lan.protocol;
+    url.hostname = lan.hostname;
+    url.port = lan.port;
+  }
   url.search = '';
   url.hash = '';
   url.searchParams.set(JOIN_PARAM, code);

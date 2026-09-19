@@ -2,7 +2,7 @@
 import { createInitialState, setPlayerLoadout, step } from '../apps/web/src/sim/core';
 import { botInput, createBotMemory } from '../apps/web/src/sim/bot';
 import { EMPTY_INPUT, type InputFrame } from '../apps/web/src/sim/types';
-import { decodeCharacter, decodeSnapshot, encodeCharacter, encodeSnapshot } from '../apps/web/src/sim/serialize';
+import { decodeCharacter, decodeInput, decodeSnapshot, encodeCharacter, encodeInput, encodeSnapshot } from '../apps/web/src/sim/serialize';
 
 let failures = 0;
 function check(name: string, ok: boolean, detail = ''): void {
@@ -62,6 +62,24 @@ check('니들 스트림 연사 간격 5틱', smgCooldown === 5, `cooldown ${smgC
 check('픽업 종료 후 기본 무기 복귀', laserNow && lo.players[0].weapon === 3, `weapon ${lo.players[0].weapon}`);
 const chr = decodeCharacter(encodeCharacter('est', 5));
 check('캐릭터 패킷에 무기 포함', chr?.character === 'est' && chr.weapon === 5);
+
+// 게임 중 무기 교체: 1~3번 선택이 기본 무기를 바꾸고, 픽업 중에는 끝난 뒤부터 적용된다
+const sw = createInitialState(['lachesis', 'clotho'], { mode: 'duel', playerCount: 2, seed: 9 });
+step(sw, [{ ...EMPTY_INPUT, swapTo: 3 }, EMPTY_INPUT]);
+check('교체 3번 → 버스터 런처', sw.players[0].weapon === 4 && sw.players[0].baseWeapon === 4, `weapon ${sw.players[0].weapon}`);
+step(sw, [{ ...EMPTY_INPUT, swapTo: 2 }, EMPTY_INPUT]);
+check('교체 2번 → 니들 스트림', sw.players[0].weapon === 3, `weapon ${sw.players[0].weapon}`);
+sw.pickups.push({ id: 7, kind: 2, x: sw.players[0].x, y: sw.players[0].y });
+step(sw, [EMPTY_INPUT, EMPTY_INPUT]);
+step(sw, [{ ...EMPTY_INPUT, swapTo: 1 }, EMPTY_INPUT]);
+const pickupKept = sw.players[0].weapon === 2 && sw.players[0].baseWeapon === 0;
+for (let i = 0; i < 600; i++) step(sw, [EMPTY_INPUT, EMPTY_INPUT]);
+check('픽업 중 교체는 픽업이 끝난 뒤 적용', pickupKept && sw.players[0].weapon === 0, `weapon ${sw.players[0].weapon}`);
+
+// 입력 패킷 왕복에 교체 번호가 실린다
+const enc = encodeInput(42, [{ ...EMPTY_INPUT, fire: true, swapTo: 3 }]);
+const dec = decodeInput(enc);
+check('입력 패킷에 교체 번호 포함', dec?.[0]?.frame.swapTo === 3 && dec[0].frame.fire === true, `swapTo ${dec?.[0]?.frame.swapTo}`);
 
 // 봇: 가만히 선 사람을 30초 안에 이기되 3초보다는 오래 걸려야 한다
 const b = createInitialState(['lachesis', 'clotho'], { mode: 'duel', playerCount: 2, seed: 11 });

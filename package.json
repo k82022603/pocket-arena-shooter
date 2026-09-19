@@ -6,6 +6,7 @@
     "packages/*"
   ],
   "scripts": {
+    "play": "node scripts/start-lan.mjs",
     "dev": "npm run dev -w apps/web",
     "dev:https": "npm run dev:https -w apps/web",
     "dev:signaling": "npm run dev -w apps/signaling",

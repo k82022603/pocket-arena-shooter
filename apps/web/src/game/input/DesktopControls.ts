@@ -8,6 +8,8 @@ export interface DesktopFrame {
   aimY: number;
   fire: boolean;
   dash: boolean;
+  // 1~3 키를 누른 프레임에만 그 번호, 아니면 0
+  swapTo: number;
 }
 
 // 노트북/데스크톱용: WASD·방향키 이동, 마우스 위치로 조준, 왼쪽 버튼 발사, Shift/Space 대시.
@@ -28,7 +30,7 @@ export class DesktopControls {
   ) {
     const kb = scene.input.keyboard;
     this.keys = kb
-      ? (kb.addKeys('W,A,S,D,UP,DOWN,LEFT,RIGHT,SHIFT,SPACE') as Record<string, Phaser.Input.Keyboard.Key>)
+      ? (kb.addKeys('W,A,S,D,UP,DOWN,LEFT,RIGHT,SHIFT,SPACE,ONE,TWO,THREE') as Record<string, Phaser.Input.Keyboard.Key>)
       : null;
     kb?.on('keydown', this.onKeyDown);
     scene.input.on('pointermove', this.onPointer);
@@ -66,6 +68,13 @@ export class DesktopControls {
     const dy = pointer.y - originY;
     const dist = Math.hypot(dx, dy) || 1;
     const dash = Phaser.Input.Keyboard.JustDown(k.SHIFT!) || Phaser.Input.Keyboard.JustDown(k.SPACE!);
+    const swapTo = Phaser.Input.Keyboard.JustDown(k.ONE!)
+      ? 1
+      : Phaser.Input.Keyboard.JustDown(k.TWO!)
+        ? 2
+        : Phaser.Input.Keyboard.JustDown(k.THREE!)
+          ? 3
+          : 0;
     return {
       moveX,
       moveY,
@@ -73,6 +82,7 @@ export class DesktopControls {
       aimY: dy / dist,
       fire: pointer.leftButtonDown() && !pointer.wasTouch,
       dash,
+      swapTo,
     };
   }
 

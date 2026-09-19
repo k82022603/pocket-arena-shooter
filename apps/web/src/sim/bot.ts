@@ -100,5 +100,5 @@ export function botInput(state: SimState, botId: 0 | 1, mem: BotMemory): InputFr
   }
   const fire = mem.bursting && dist < ENGAGE_RANGE && foe.hp > 0;
 
-  return { moveX, moveY, aimX: Math.cos(angle), aimY: Math.sin(angle), fire, dash, skill: false };
+  return { moveX, moveY, aimX: Math.cos(angle), aimY: Math.sin(angle), fire, dash, skill: false, swapTo: 0 };
 }

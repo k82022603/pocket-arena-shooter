@@ -1,14 +1,21 @@
 import { defineConfig, loadEnv } from 'vite';
 import basicSsl from '@vitejs/plugin-basic-ssl';
 import { VitePWA } from 'vite-plugin-pwa';
+import { lanIPv4 } from '../../scripts/lan-ip.mjs';
+
+const PORT = 5173;
 
 // `vite --mode https` 로 실행하면 자체 서명 인증서로 https 제공 (폰에서 카메라/Web Bluetooth 등 secure context 필요 시)
 // VITE_BASE 를 주면 서브 경로(예: GitHub Pages의 /repo-name/)에 배포할 수 있다.
-export default defineConfig(({ mode }) => {
+export default defineConfig(({ mode, command }) => {
   const env = loadEnv(mode, process.cwd(), '');
   const base = env.VITE_BASE || '/';
+  // localhost로 열어도 QR에는 폰이 닿을 수 있는 주소가 들어가도록 개발 서버의 LAN 주소를 알려준다
+  const lanIp = command === 'serve' ? lanIPv4() : null;
+  const lanOrigin = lanIp ? `${mode === 'https' ? 'https' : 'http'}://${lanIp}:${PORT}` : null;
   return {
     base,
+    define: { __LAN_ORIGIN__: JSON.stringify(lanOrigin) },
     plugins: [
       ...(mode === 'https' ? [basicSsl()] : []),
       VitePWA({
@@ -42,7 +49,7 @@ export default defineConfig(({ mode }) => {
     ],
     server: {
       host: true,
-      port: 5173,
+      port: PORT,
       proxy: {
         '/ws': { target: 'ws://localhost:8787', ws: true },
       },

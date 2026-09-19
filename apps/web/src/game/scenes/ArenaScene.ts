@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import { CHARACTERS } from '../../sim/characters';
 import { COOP, ENEMIES, ENEMY_OWNER, SIM, type BulletState, type InputFrame, type PlayerState } from '../../sim/types';
-import { PICKUP, PICKUP_COLORS, WEAPONS } from '../../sim/weapons';
+import { LOADOUTS, PICKUP, PICKUP_COLORS, WEAPONS } from '../../sim/weapons';
 import type { Session } from '../../net/connect';
 import type { FailReason } from '../../net/session';
 import type { Unsubscribe } from '../../net/transport';
@@ -63,8 +63,10 @@ export class ArenaScene extends Phaser.Scene {
   private moveStick!: VirtualStick;
   private aimStick!: VirtualStick;
   private desktop!: DesktopControls;
+  private weaponButton!: Phaser.GameObjects.Text;
   private lastRender: RenderState | null = null;
   private dashPressed = false;
+  private swapRequest = 0;
 
   private readonly fx = new Fx();
   private worldScale = 1;
@@ -195,6 +197,17 @@ export class ArenaScene extends Phaser.Scene {
     dash.setDepth(102);
     dash.on('pointerdown', () => (this.dashPressed = true));
 
+    // 무기 교체: 탭하면 다음 기본 무기로, PC는 1~3 키
+    this.weaponButton = makeButton(this, this.scale.width - 90, this.scale.height * 0.5, '', () => {})
+      .setFontSize(14)
+      .setDepth(102);
+    this.weaponButton.on('pointerdown', () => {
+      const options = LOADOUTS[local];
+      const current = this.lastRender?.players[this.sync.localId].baseWeapon ?? options[0]!;
+      const next = (options.indexOf(current) + 1) % options.length;
+      this.swapRequest = next + 1;
+    });
+
     makeButton(this, this.scale.width - 60, 30, '✕', () => this.exit()).setDepth(102).setFontSize(18);
 
     this.scale.on('resize', this.layout, this);
@@ -287,8 +300,10 @@ export class ArenaScene extends Phaser.Scene {
       fire: aim.magnitude > 0.3,
       dash: this.dashPressed,
       skill: false,
+      swapTo: this.swapRequest,
     };
     this.dashPressed = false;
+    this.swapRequest = 0;
 
     const me = this.lastRender?.players[this.sync.localId];
     const desk = me ? this.desktop.read(this.baseX + me.x * this.worldScale, this.baseY + me.y * this.worldScale) : null;
@@ -303,6 +318,7 @@ export class ArenaScene extends Phaser.Scene {
         frame.fire = desk.fire;
       }
       frame.dash = frame.dash || desk.dash;
+      if (desk.swapTo > 0) frame.swapTo = desk.swapTo;
     }
     return frame;
   }
@@ -712,11 +728,17 @@ export class ArenaScene extends Phaser.Scene {
     const [p0, p1] = rs.players;
     const hp = (p: PlayerState) => {
       let text = `${CHARACTERS[p.character].name} ${p.hp}/${CHARACTERS[p.character].stats.maxHp}`;
-      if (p.weaponTicks > 0) text += ` [${WEAPONS[p.weapon].name} ${Math.ceil(p.weaponTicks / SIM.tickRate)}s]`;
-      else if (p.weapon !== 0) text += ` [${WEAPONS[p.weapon].name}]`;
+      if (p.weaponTicks > 0) {
+        text += ` [${WEAPONS[p.weapon].name} ${Math.ceil(p.weaponTicks / SIM.tickRate)}s`;
+        text += p.baseWeapon !== p.weapon ? ` → ${WEAPONS[p.baseWeapon].name}]` : ']';
+      } else {
+        text += ` [${WEAPONS[p.weapon].name}]`;
+      }
       if (p.boostTicks > 0) text += ` [부스트 ${Math.ceil(p.boostTicks / SIM.tickRate)}s]`;
       return text;
     };
+    const me = rs.players[this.sync.localId];
+    this.weaponButton.setText(`무기 ▸ ${WEAPONS[me.baseWeapon].name}`);
     const players = rs.playerCount === 2 ? `${hp(p0)}   vs   ${hp(p1)}` : hp(p0);
     const net = this.session
       ? `\nRTT ${this.session.rtt.toFixed(0)}ms  ${this.session.kind}/${this.sync.kind}  ${this.sync.debugInfo()}`

@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import QRCode from 'qrcode';
 import { hostSession, joinSession, type Session } from '../../net/connect';
-import { joinUrlFor, parseJoinCode } from '../../net/pairing';
+import { isLocalOnlyHost, joinUrlFor, parseJoinCode } from '../../net/pairing';
 import { cameraAvailable, promptCode, scanQr, toast } from '../../ui/overlay';
 import { sfx } from '../audio/Sfx';
 import { FONT, makeButton, makeLabel } from '../ui';
@@ -67,7 +67,12 @@ export class LobbyScene extends Phaser.Scene {
       .text(rx, height * 0.33, code, { fontFamily: 'ui-monospace, Menlo, Consolas, monospace', fontSize: '56px', color: '#ffffff' })
       .setOrigin(0.5)
       .setLetterSpacing(8);
-    makeLabel(this, rx, height * 0.47, 'QR을 찍거나 코드를 입력하면 시작됩니다', 15);
+    const reachable = !new URL(url).hostname.match(/^(localhost|127\.0\.0\.1|\[::1\])$/);
+    makeLabel(this, rx, height * 0.45, 'QR을 찍거나 코드를 입력하면 시작됩니다', 15);
+    makeLabel(this, rx, height * 0.52, reachable ? url : '이 PC에서만 열 수 있는 주소입니다 — npm run play 로 실행하세요', 12).setColor(
+      reachable ? '#8fa3c8' : '#ff8a80',
+    );
+    if (!reachable && isLocalOnlyHost()) toast('폰에서 접속하려면 LAN 주소로 열어야 합니다', 3000);
     makeButton(this, rx - 80, height * 0.6, '링크 복사', () => void this.copyLink(url)).setFontSize(16);
     makeButton(this, rx + 80, height * 0.6, '공유', () => void this.share(url, code)).setFontSize(16);
     this.setStatus('상대를 기다리는 중…');

@@ -15,7 +15,7 @@ import {
   type PlayerStats,
   type SimState,
 } from './types';
-import { PICKUP, WEAPONS, isLoadoutWeapon, rollPickupKind, type PickupKind, type WeaponKind } from './weapons';
+import { LOADOUTS, PICKUP, SWAP_DELAY_TICKS, WEAPONS, isLoadoutWeapon, rollPickupKind, type PickupKind, type WeaponKind } from './weapons';
 
 export interface StepOptions {
   // 각 플레이어의 이번 틱 입력에 붙은 틱 번호 (탄환 spawnTick). 기본은 시뮬레이션 틱.
@@ -127,6 +127,18 @@ export function applyPlayerInput(p: PlayerState, input: InputFrame): void {
   if (input.dash && p.dashCooldown === 0 && p.dashTicks === 0) {
     p.dashTicks = stats.dashTicks;
     p.dashCooldown = stats.dashCooldownTicks;
+  }
+
+  // 기본 무기 교체. 픽업 무기를 들고 있으면 픽업이 끝난 뒤부터 적용된다.
+  if (input.swapTo > 0) {
+    const target = LOADOUTS[p.character][input.swapTo - 1];
+    if (target !== undefined && target !== p.baseWeapon) {
+      p.baseWeapon = target;
+      if (p.weaponTicks === 0) {
+        p.weapon = target;
+        p.fireCooldown = Math.max(p.fireCooldown, SWAP_DELAY_TICKS);
+      }
+    }
   }
 
   const boost = p.boostTicks > 0 ? PICKUP.boostMul : 1;
