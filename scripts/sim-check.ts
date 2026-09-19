@@ -6,6 +6,8 @@ import { decodeCharacter, decodeInput, decodeSnapshot, encodeCharacter, encodeIn
 import { PositionHistory } from '../apps/web/src/sim/history';
 import { CHARACTERS } from '../apps/web/src/sim/characters';
 import { coopResultText } from '../apps/web/src/game/outcomeText';
+import { SessionLink } from '../apps/web/src/net/session';
+import type { Channel, MessageHandler, Transport, Unsubscribe } from '../apps/web/src/net/transport';
 import { waveComposition } from '../apps/web/src/sim/coop';
 import { PICKUP } from '../apps/web/src/sim/weapons';
 import { GuestSync } from '../apps/web/src/game/sync/GuestSync';
@@ -244,6 +246,38 @@ check('봇이 가만히 선 상대를 이김', b.players[0].hp === 0 && b.elapse
   );
 
 
+}
+
+
+// 씬 전환 중 도착한 event 메시지는 버려지면 안 된다 (두 사람이 같은 파티마가 되던 원인)
+{
+  let emit: (c: Channel, d: Uint8Array) => void = () => {};
+  const transport = {
+    kind: 'webrtc' as const,
+    rtt: 0,
+    send: () => {},
+    onMessage: (h: MessageHandler): Unsubscribe => {
+      emit = h;
+      return () => {};
+    },
+    onClose: (): Unsubscribe => () => {},
+    close: () => {},
+  } as unknown as Transport;
+  const link = new SessionLink('host', '123456', 'tok', { onMessage: () => () => {}, onClose: () => () => {} } as never, transport);
+
+  // 로비에서 아레나로 넘어가는 사이: 아직 아무도 구독하지 않았다
+  emit('event', encodeCharacter('est', 3));
+  emit('input', Uint8Array.of(0x01, 0, 0, 0, 0));
+
+  const seen: { channel: Channel; character: string | null }[] = [];
+  link.onMessage((channel, data) => {
+    seen.push({ channel, character: decodeCharacter(data)?.character ?? null });
+  });
+  check(
+    '씬 전환 중 도착한 캐릭터 선택이 보존된다',
+    seen.length === 1 && seen[0]!.channel === 'event' && seen[0]!.character === 'est',
+    '받은 ' + seen.length + '건, 캐릭터 ' + (seen[0]?.character ?? '없음'),
+  );
 }
 
 

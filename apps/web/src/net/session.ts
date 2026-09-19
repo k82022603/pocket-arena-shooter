@@ -11,6 +11,8 @@ export type LinkEvent = 'reconnecting' | 'reconnected' | 'failed';
 
 // 이 시간 안에 복구하지 못하면 경기를 끝낸다. 서버 유예(15초)보다 짧아야 한다.
 export const RECONNECT_WINDOW_MS = 10_000;
+// 핸들러가 없는 동안 보관할 event 메시지 수 상한
+const PENDING_EVENT_LIMIT = 16;
 const NEGOTIATE_TIMEOUT_MS = 8_000;
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
@@ -44,6 +46,10 @@ export class SessionLink {
 
   private transport: Transport | null = null;
   private readonly handlers = new Set<MessageHandler>();
+  // 씬이 바뀌는 사이에는 핸들러가 잠시 비어 있다. 그때 도착한 event 메시지를 그냥 버리면
+  // 참가한 쪽이 먼저 아레나에 들어가 보낸 캐릭터 선택이 사라져, 두 사람이 같은 파티마가 된다.
+  // event 채널은 한 번 놓치면 복구 경로가 없으므로 붙을 때까지 들고 있는다.
+  private readonly pending: { channel: Channel; data: Uint8Array }[] = [];
   private readonly listeners = new Map<LinkEvent, Set<(reason?: FailReason) => void>>();
   private transportUnsubs: Unsubscribe[] = [];
   private signalingUnsubs: Unsubscribe[] = [];
@@ -80,7 +86,12 @@ export class SessionLink {
   }
 
   onMessage(handler: MessageHandler): Unsubscribe {
+    const first = this.handlers.size === 0;
     this.handlers.add(handler);
+    if (first && this.pending.length > 0) {
+      const queued = this.pending.splice(0, this.pending.length);
+      for (const m of queued) handler(m.channel, m.data);
+    }
     return () => this.handlers.delete(handler);
   }
 
@@ -113,6 +124,13 @@ export class SessionLink {
     this.transport = transport;
     this.transportUnsubs = [
       transport.onMessage((channel, data) => {
+        if (this.handlers.size === 0) {
+          // 지연 도착한 입력·스냅샷은 버려도 되지만 event는 보관한다
+          if (channel === 'event' && this.pending.length < PENDING_EVENT_LIMIT) {
+            this.pending.push({ channel, data: data.slice() });
+          }
+          return;
+        }
         for (const fn of this.handlers) fn(channel, data);
       }),
       transport.onClose(() => this.handleTransportClosed(transport)),

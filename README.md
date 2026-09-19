@@ -48,7 +48,7 @@ npm run play -- https
 | `npm run dev` | 웹 서버만 |
 | `npm run dev:signaling` | 시그널링 서버만 |
 | `npm run dev:https` | 웹 서버만 https로 |
-| `npm run check:sim` | 화면 없이 규칙 검사 34개 |
+| `npm run check:sim` | 화면 없이 규칙 검사 35개 |
 | `npm run check:balance` | 협동 난이도 측정 (자동 플레이 40판) |
 | `npm run check:docs` | 문서에 적힌 줄 수·검사 개수가 코드와 맞는지 대조 |
 | `npm run typecheck` | 전체 타입 검사 |
@@ -136,7 +136,7 @@ QR이나 링크로 들어와도 타이틀에서 파티마와 무기를 고른 �
 npm run check:sim
 ```
 
-화면 없이 순수 로직만 돌려 규칙을 숫자로 확인한다. 현재 34개 항목이 1초 안에 통과한다. 같은 시드를 주면 항상 같은 결과가 나온다.
+화면 없이 순수 로직만 돌려 규칙을 숫자로 확인한다. 현재 35개 항목이 1초 안에 통과한다. 같은 시드를 주면 항상 같은 결과가 나온다.
 
 폰에서 무엇을 어떻게 확인하고 합격 기준이 무엇인지는 [실기 테스트 가이드](docs/실기_테스트_가이드.md)에 체크리스트로 있다.
 
