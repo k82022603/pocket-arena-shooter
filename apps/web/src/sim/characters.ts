@@ -1,4 +1,4 @@
-// 파티마 로스터와 능력치. 원작 파워게이지를 게임 수치로 옮긴 방식은 docs/캐릭터_설정.md에 있다.
+// 파티마 로스터와 능력치. 원작 파워게이지를 게임 수치로 옮긴 방식은 docs/02.캐릭터_설정.md에 있다.
 
 export type CharacterId = 'lachesis' | 'clotho' | 'atropos' | 'est';
 

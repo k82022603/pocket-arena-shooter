@@ -6,7 +6,7 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 
-const MANUAL = 'docs/개발자_매뉴얼.md'; // 파일 지도와 검사 목록이 적힌 문서
+const MANUAL = 'docs/06.개발자_매뉴얼.md'; // 파일 지도와 검사 목록이 적힌 문서
 const ROOTS = ['apps', 'packages', 'scripts']; // 소스를 찾을 폴더
 const EXTS = ['.ts', '.mts', '.mjs'];
 
@@ -74,13 +74,13 @@ if (actualNames.length !== docNames.length) {
 const DOCS = [
   'README.md',
   MANUAL,
-  'docs/게임_매뉴얼.md',
-  'docs/실기_테스트_가이드.md',
-  'docs/모바일_웹_슈팅게임_기획서.md',
-  'docs/테스트_방식과_헤드리스.md',
-  'docs/회고.md',
-  'docs/프로그램_명세서.md',
-  'docs/아키텍처_정의서.md',
+  'docs/09.게임_매뉴얼.md',
+  'docs/08.실기_테스트_가이드.md',
+  'docs/01.모바일_웹_슈팅게임_기획서.md',
+  'docs/07.테스트_방식과_헤드리스.md',
+  'docs/10.회고.md',
+  'docs/05.프로그램_명세서.md',
+  'docs/04.아키텍처_정의서.md',
 ];
 let countFailures = 0;
 for (const file of DOCS) {
