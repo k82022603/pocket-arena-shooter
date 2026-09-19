@@ -68,6 +68,11 @@ export class GuestSync implements GameSync {
   private snaps = 0;
   // 호스트의 실제 진행 속도(틱/초). 60에 가까워야 정상이다.
   hostTickRate: number = SIM.tickRate;
+  /** 권위 스냅샷을 한 장이라도 받았는가. 받기 전에 그리는 화면은 임시 초기값이라 진짜가 아니다. */
+  get hasAuthority(): boolean {
+    return this.snapshots.length > 0;
+  }
+
 
   constructor(
     private readonly transport: SyncLink,

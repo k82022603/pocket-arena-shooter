@@ -448,6 +448,26 @@ check('봇이 가만히 선 상대를 이김', b.players[0].hp === 0 && b.elapse
 }
 
 
+// 권위 스냅샷을 받기 전에는 게스트가 "진짜 월드를 안다"고 말하면 안 된다
+{
+  const sent: Uint8Array[] = [];
+  const g = new GuestSync({ rtt: 0, send: (_c, d) => sent.push(d) } as SyncLink, 'est', 0, () => 0);
+  const before = g.hasAuthority;
+  const shown = g.renderState(0);
+  // 스냅샷이 없으면 임시 초기값이라 두 캐릭터가 같게 나온다. 이 화면을 진짜처럼 보여주면 안 된다.
+  const placeholderLooksReal = shown.players[0].character === shown.players[1].character;
+
+  const auth = createInitialState(['atropos', 'est'], { mode: 'coop', playerCount: 2, seed: 7 });
+  auth.tick = 500;
+  g.handleMessage('input', encodeSnapshot(auth, 0));
+  check(
+    '첫 스냅샷 전에는 권위를 모른다고 보고한다',
+    before === false && placeholderLooksReal && g.hasAuthority === true,
+    '받기 전 ' + before + ', 받은 뒤 ' + g.hasAuthority,
+  );
+}
+
+
 // 씬 전환 중 도착한 event 메시지는 버려지면 안 된다 (두 사람이 같은 파티마가 되던 원인)
 {
   let emit: (c: Channel, d: Uint8Array) => void = () => {};

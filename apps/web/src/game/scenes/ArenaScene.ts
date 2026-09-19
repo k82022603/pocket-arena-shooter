@@ -22,6 +22,9 @@ import { selectedCharacter, selectedMode } from './TitleScene';
 import { selectedLoadout } from '../loadout';
 import { MatchRecorder, SAMPLE_INTERVAL_TICKS } from '../recorder';
 
+// 참가한 쪽이 첫 권위 스냅샷을 이만큼 못 받으면 연결이 살아 있다고 볼 수 없다.
+const AUTHORITY_TIMEOUT_MS = 12_000;
+
 type ArenaData = { mode: 'solo' } | { mode: 'versus'; session: Session };
 
 const ENEMY_BULLET_COLOR = 0xff7043;
@@ -63,6 +66,7 @@ export class ArenaScene extends Phaser.Scene {
   private slowFrames = 0;
   private slowSince = 0;
   private recordTick = 0;
+  private waitingSince = 0;
   private hudPortraits: [Phaser.GameObjects.Container | null, Phaser.GameObjects.Container | null] = [null, null];
   private hudPortraitIds: [CharacterId | null, CharacterId | null] = [null, null];
   private reconnectShade!: Phaser.GameObjects.Rectangle;
@@ -266,6 +270,13 @@ export class ArenaScene extends Phaser.Scene {
       this.render();
       return;
     }
+    // 참가한 쪽은 첫 스냅샷이 오기 전까지 진짜 월드를 모른다. 그 상태로 그리면 임시 초기값이
+    // 실제 경기처럼 보여서(두 캐릭터가 같거나 웨이브가 없는 화면) 연결 실패를 알아챌 수 없다.
+    if (this.waitingForAuthority()) {
+      this.accumulator = 0;
+      this.fx.update(deltaMs);
+      return;
+    }
     this.hideReconnectOverlay();
     this.checkSlowHost(deltaMs);
     this.accumulator += Math.min(deltaMs, 100) / 1000;
@@ -306,7 +317,38 @@ export class ArenaScene extends Phaser.Scene {
       rs.mode === 'coop'
         ? { mode: 'coop', won: false, wave: rs.coop?.wave ?? 0 }
         : { mode: 'duel', winner: remaining ? localId : localId === 0 ? 1 : 0 };
-    this.finish(outcome, remaining ? '상대의 연결이 끊겼습니다' : '연결을 복구하지 못했습니다');
+    this.finish(
+      outcome,
+      this.sync.kind === 'guest' && !(this.sync as GuestSync).hasAuthority
+        ? '호스트와 데이터가 오가지 않아 시작하지 못했습니다'
+        : remaining
+          ? '상대의 연결이 끊겼습니다'
+          : '연결을 복구하지 못했습니다',
+    );
+  }
+
+  // 첫 권위 스냅샷을 기다리는 동안은 화면을 가려 둔다. 너무 오래 걸리면 연결 실패로 끝낸다.
+  private waitingForAuthority(): boolean {
+    if (this.sync.kind !== 'guest' || (this.sync as GuestSync).hasAuthority) {
+      this.waitingSince = 0;
+      return false;
+    }
+    const now = performance.now();
+    if (this.waitingSince === 0) this.waitingSince = now;
+    const waited = now - this.waitingSince;
+    if (waited > AUTHORITY_TIMEOUT_MS) {
+      this.recorder.event(this.recordTick, 'no-authority', this.session?.kind ?? 'none');
+      this.endByDisconnect('rejoin_failed');
+      return true;
+    }
+    const left = Math.max(0, Math.ceil((AUTHORITY_TIMEOUT_MS - waited) / 1000));
+    this.reconnectShade.setVisible(true);
+    this.reconnectText
+      .setVisible(true)
+      .setText(
+        `호스트와 데이터가 아직 오가지 않습니다… (${left})\n방을 만든 기기와 같은 Wi‑Fi인지 확인하세요`,
+      );
+    return true;
   }
 
   private renderReconnectOverlay(): void {
