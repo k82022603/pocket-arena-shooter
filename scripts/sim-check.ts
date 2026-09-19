@@ -3,6 +3,8 @@ import { createInitialState, setPlayerLoadout, step } from '../apps/web/src/sim/
 import { botInput, createBotMemory } from '../apps/web/src/sim/bot';
 import { EMPTY_INPUT, type InputFrame } from '../apps/web/src/sim/types';
 import { decodeCharacter, decodeInput, decodeSnapshot, encodeCharacter, encodeInput, encodeSnapshot } from '../apps/web/src/sim/serialize';
+import { GuestSync } from '../apps/web/src/game/sync/GuestSync';
+import type { SyncLink } from '../apps/web/src/game/sync/GameSync';
 
 let failures = 0;
 function check(name: string, ok: boolean, detail = ''): void {
@@ -86,6 +88,54 @@ const b = createInitialState(['lachesis', 'clotho'], { mode: 'duel', playerCount
 const mem = createBotMemory();
 while (b.elapsed < 1800 && b.players[0].hp > 0) step(b, [EMPTY_INPUT, botInput(b, 1, mem)]);
 check('봇이 가만히 선 상대를 이김', b.players[0].hp === 0 && b.elapsed > 180, `${(b.elapsed / 60).toFixed(1)}s, bot hp ${b.players[1].hp}`);
+
+// 보정 스무딩: 권위 위치가 예측과 어긋나도 화면은 이어지고, 지수 감쇠로 권위에 수렴한다
+{
+  const link: SyncLink = { rtt: 0, send: () => {} };
+  const guest = new GuestSync(link, 'lachesis', 0);
+  const right: InputFrame = { ...EMPTY_INPUT, moveX: 1 };
+  for (let i = 0; i < 30; i++) guest.step(right);
+
+  const before = guest.renderState(0).players[1];
+  const auth = createInitialState(['lachesis', 'lachesis'], { mode: 'duel', playerCount: 2, seed: 7 });
+  auth.tick = 1_000_000;
+  auth.players[1].x = before.x + 20;
+  auth.players[1].y = before.y;
+  // ackTick을 크게 주면 대기 입력이 모두 확인 처리되어 재조정 결과가 권위 위치와 정확히 같아진다
+  guest.handleMessage('input', encodeSnapshot(auth, 10_000_000));
+
+  const t0 = guest.renderState(0).players[1];
+  const t70 = guest.renderState(70).players[1];
+  const settled = guest.renderState(600).players[1];
+  const smooth =
+    Math.abs(t0.x - before.x) < 0.01 &&
+    Math.abs(t70.x - (auth.players[1].x - 10)) < 0.3 &&
+    Math.abs(settled.x - auth.players[1].x) < 0.01;
+  check(
+    '보정 스무딩: 화면이 이어지고 권위로 수렴',
+    smooth,
+    before.x.toFixed(1) + ' to ' + t0.x.toFixed(1) + ' to ' + t70.x.toFixed(1) + ' to ' + settled.x.toFixed(1) + ' (권위 ' + auth.players[1].x.toFixed(1) + ')',
+  );
+
+  // 큰 어긋남(부활·재접속)은 미끄러뜨리지 않고 즉시 붙인다
+  const jump = createInitialState(['lachesis', 'lachesis'], { mode: 'duel', playerCount: 2, seed: 7 });
+  jump.tick = 1_000_100;
+  jump.players[1].x = auth.players[1].x + 300;
+  jump.players[1].y = auth.players[1].y;
+  guest.handleMessage('input', encodeSnapshot(jump, 10_000_001));
+  const snapped = guest.renderState(620).players[1];
+  check('큰 어긋남은 스무딩 없이 즉시 보정', Math.abs(snapped.x - jump.players[1].x) < 0.01, 'x ' + snapped.x.toFixed(1));
+
+  // 스무딩 중에도 판정에 쓰는 상태는 권위와 같고, 화면만 잠시 어긋나 있다
+  const drift = createInitialState(['lachesis', 'lachesis'], { mode: 'duel', playerCount: 2, seed: 7 });
+  drift.tick = 1_000_200;
+  drift.players[1].x = jump.players[1].x - 15;
+  drift.players[1].y = jump.players[1].y;
+  guest.handleMessage('input', encodeSnapshot(drift, 10_000_002));
+  const shown = guest.renderState(640).players[1];
+  const offset = Math.abs(shown.x - drift.players[1].x);
+  check('스무딩 중에는 화면만 어긋난다', offset > 1 && offset < 20, '화면 오프셋 ' + offset.toFixed(1) + 'px');
+}
 
 console.log(failures === 0 ? '\n모든 검사 통과' : `\n${failures}개 실패`);
 process.exit(failures === 0 ? 0 : 1);

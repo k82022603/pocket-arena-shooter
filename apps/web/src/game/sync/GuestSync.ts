@@ -21,6 +21,16 @@ import { INTERP_DELAY_TICKS, monotonicTick, type GameSync, type RenderState, typ
 const MAX_SNAPSHOTS = 32;
 const MAX_PENDING_INPUTS = 120;
 
+// 보정 스무딩: 재조정으로 권위 위치가 예측과 달라도 화면에서는 즉시 순간이동하지 않는다.
+// 시뮬레이션 상태(this.predicted)는 권위대로 덮고, 차이를 "화면 오프셋"으로 들고 있다가 지수 감쇠로 0에 수렴시킨다.
+// 상태를 서버 쪽으로 천천히 끌어가는 방식과 달리, 판정에 쓰이는 위치는 항상 권위와 일치한다.
+const CORRECTION_HALF_LIFE_MS = 70;
+// 이보다 큰 어긋남은 부활·재접속·큰 디싱크이므로 미끄러뜨리지 않고 바로 붙인다.
+const CORRECTION_SNAP_DISTANCE = 96;
+// 오차가 계속 쌓이는 상황(지속 손실)에서도 화면이 실제 위치에서 이만큼 이상 떨어지지 않게 한다.
+const CORRECTION_MAX_OFFSET = 48;
+const CORRECTION_EPSILON = 0.25;
+
 interface ReceivedSnapshot {
   state: SimState;
   receivedAt: number;
@@ -49,6 +59,11 @@ export class GuestSync implements GameSync {
   private lastRender: RenderState | null = null;
   private corrections = 0;
   private rejectedShots = 0;
+  // 화면 위치 = predicted + (smoothX, smoothY). 렌더 프레임마다 0으로 감쇠한다.
+  private smoothX = 0;
+  private smoothY = 0;
+  private smoothedAt: number | null = null;
+  private snaps = 0;
 
   constructor(
     private readonly transport: SyncLink,
@@ -67,6 +82,7 @@ export class GuestSync implements GameSync {
     this.pending.length = 0;
     this.predictedBullets = [];
     this.lastRender = null;
+    this.clearCorrection();
     this.transport.send('event', encodeCharacter(this.local, this.weapon));
   }
 
@@ -92,8 +108,53 @@ export class GuestSync implements GameSync {
       applyPlayerInput(replayed, input.frame);
       consumeFire(replayed, input.frame);
     }
-    if (Math.hypot(replayed.x - this.predicted.x, replayed.y - this.predicted.y) > 0.5) this.corrections += 1;
+    const error = Math.hypot(replayed.x - this.predicted.x, replayed.y - this.predicted.y);
+    if (error > 0.5) this.corrections += 1;
+    this.absorbCorrection(this.predicted, replayed, error);
     this.predicted = replayed;
+  }
+
+  // 화면이 이어져 보이도록 오프셋을 누적한다: 새 오프셋 = 이전 화면 위치 - 새 권위 위치.
+  private absorbCorrection(before: PlayerState, after: PlayerState, error: number): void {
+    if (error > CORRECTION_SNAP_DISTANCE) {
+      this.snaps += 1;
+      this.clearCorrection();
+      return;
+    }
+    if (error <= CORRECTION_EPSILON) return;
+    let x = this.smoothX + (before.x - after.x);
+    let y = this.smoothY + (before.y - after.y);
+    const len = Math.hypot(x, y);
+    if (len > CORRECTION_MAX_OFFSET) {
+      const k = CORRECTION_MAX_OFFSET / len;
+      x *= k;
+      y *= k;
+    }
+    this.smoothX = x;
+    this.smoothY = y;
+  }
+
+  private clearCorrection(): void {
+    this.smoothX = 0;
+    this.smoothY = 0;
+  }
+
+  // 실제 경과 시간 기준 지수 감쇠. 프레임률이 달라도 같은 속도로 수렴한다.
+  private decayCorrection(nowMs: number): void {
+    const last = this.smoothedAt;
+    this.smoothedAt = nowMs;
+    if (this.smoothX === 0 && this.smoothY === 0) return;
+    const dt = last === null ? 0 : Math.max(nowMs - last, 0);
+    const keep = Math.pow(0.5, dt / CORRECTION_HALF_LIFE_MS);
+    this.smoothX *= keep;
+    this.smoothY *= keep;
+    if (Math.hypot(this.smoothX, this.smoothY) < CORRECTION_EPSILON) this.clearCorrection();
+  }
+
+  // 그릴 때만 오프셋을 더한다. 탄환 생성·판정은 this.predicted(권위 일치)를 그대로 쓴다.
+  private localView(): PlayerState {
+    if (this.smoothX === 0 && this.smoothY === 0) return this.predicted;
+    return { ...this.predicted, x: this.predicted.x + this.smoothX, y: this.predicted.y + this.smoothY };
   }
 
   // 호스트가 처리한 입력(ack 이하)으로 생긴 예측 탄환은 권위 스냅샷에 있어야 한다.
@@ -163,9 +224,11 @@ export class GuestSync implements GameSync {
   }
 
   renderState(nowMs: number): RenderState {
+    this.decayCorrection(nowMs);
+    const localView = this.localView();
     const latest = this.snapshots[this.snapshots.length - 1];
     if (!latest) {
-      const players: [PlayerState, PlayerState] = [this.placeholder.players[0], this.predicted];
+      const players: [PlayerState, PlayerState] = [this.placeholder.players[0], localView];
       return { ...this.placeholder, tick: this.localTick, players, bullets: this.predictedBullets, pickups: [] };
     }
 
@@ -176,7 +239,7 @@ export class GuestSync implements GameSync {
     const t = span > 0 ? clamp01((renderTick - from.state.tick) / span) : 1;
 
     const remote = lerpPlayer(from.state.players[0], to.state.players[0], t);
-    const players: [PlayerState, PlayerState] = [remote, this.predicted];
+    const players: [PlayerState, PlayerState] = [remote, localView];
 
     const predictedTicks = new Set<number>();
     for (const b of this.predictedBullets) predictedTicks.add(b.authTick ?? b.spawnTick);
@@ -241,7 +304,8 @@ export class GuestSync implements GameSync {
   }
 
   debugInfo(): string {
-    return `snap ${this.snapshots.length} pending ${this.pending.length} fix ${this.corrections} shots ${this.predictedBullets.length} rejected ${this.rejectedShots}`;
+    const off = Math.hypot(this.smoothX, this.smoothY);
+    return `snap ${this.snapshots.length} pending ${this.pending.length} fix ${this.corrections} smooth ${off.toFixed(1)}px snapped ${this.snaps} shots ${this.predictedBullets.length} rejected ${this.rejectedShots}`;
   }
 }
 
