@@ -1,10 +1,11 @@
 // 화면 없이(헤드리스) 시뮬레이션 코어만 돌려 규칙을 확인한다: npm run check:sim
-import { createInitialState, outcomeOf, setPlayerLoadout, step } from '../apps/web/src/sim/core';
+import { createInitialState, outcomeOf, setPlayerLoadout, step, summarize } from '../apps/web/src/sim/core';
 import { botInput, createBotMemory } from '../apps/web/src/sim/bot';
 import { COOP, EMPTY_INPUT, ENEMY_OWNER, type InputFrame } from '../apps/web/src/sim/types';
 import { decodeCharacter, decodeInput, decodeSnapshot, encodeCharacter, encodeInput, encodeSnapshot } from '../apps/web/src/sim/serialize';
 import { PositionHistory } from '../apps/web/src/sim/history';
 import { CHARACTERS } from '../apps/web/src/sim/characters';
+import { coopResultText } from '../apps/web/src/game/outcomeText';
 import { waveComposition } from '../apps/web/src/sim/coop';
 import { PICKUP } from '../apps/web/src/sim/weapons';
 import { GuestSync } from '../apps/web/src/game/sync/GuestSync';
@@ -215,6 +216,33 @@ check('봇이 가만히 선 상대를 이김', b.players[0].hp === 0 && b.elapse
   );
 
 
+}
+
+
+// 협동 결과 화면은 패배 원인을 구분해야 한다 (코어 만피인데 "코어 함락"이 뜨던 문제)
+{
+  const base = createInitialState(['lachesis', 'clotho'], { mode: 'coop', playerCount: 2, seed: 1 });
+  const sum = (coreHp: number, playerCount: 1 | 2) => {
+    const s2 = createInitialState(['lachesis', 'clotho'], { mode: 'coop', playerCount, seed: 1 });
+    s2.coop!.coreHp = coreHp;
+    s2.coop!.wave = 2;
+    return summarize(s2);
+  };
+  const lost = { mode: 'coop', won: false, wave: 2 } as const;
+  const won = { mode: 'coop', won: true, wave: 10 } as const;
+
+  const wipe = coopResultText(lost, sum(500, 2), false);
+  const fallen = coopResultText(lost, sum(0, 2), false);
+  const soloWipe = coopResultText(lost, sum(500, 1), false);
+  const cut = coopResultText(lost, sum(500, 2), true);
+  const cleared = coopResultText(won, sum(320, 2), false);
+  void base;
+
+  check('코어가 남아 있으면 전멸로 표시', wipe.title === '전멸' && wipe.subtitle.includes('전원 다운'), wipe.title + ' / ' + wipe.subtitle);
+  check('코어가 0이면 코어 함락으로 표시', fallen.title === '코어 함락' && fallen.subtitle.includes('코어 파괴'), fallen.title);
+  check('1인 방어는 전투 불능으로 표시', soloWipe.title === '전투 불능', soloWipe.title + ' / ' + soloWipe.subtitle);
+  check('연결이 끊겨 끝나면 방어 중단으로 표시', cut.title === '방어 중단', cut.title);
+  check('클리어는 방어 성공으로 표시', cleared.title === '방어 성공!', cleared.title);
 }
 
 

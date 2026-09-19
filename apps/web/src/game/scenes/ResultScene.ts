@@ -8,6 +8,7 @@ import { sfx } from '../audio/Sfx';
 import { addPortraitCard } from '../fx/Portraits';
 import { applyResult } from '../record';
 import { FONT, makeButton, makeLabel } from '../ui';
+import { coopResultText } from '../outcomeText';
 
 interface ResultData {
   outcome: Outcome;
@@ -71,12 +72,10 @@ export class ResultScene extends Phaser.Scene {
     let subtitle = '';
     if (outcome.mode === 'duel') {
       title = outcome.winner === data.localId ? '승리!' : '패배';
-    } else if (outcome.won) {
-      title = '방어 성공!';
-      subtitle = `${COOP.waves}웨이브 전부 막아냈습니다`;
     } else {
-      title = '코어 함락';
-      subtitle = `웨이브 ${outcome.wave}/${COOP.waves}에서 패배`;
+      const text = coopResultText(outcome, summary, data.note !== undefined);
+      title = text.title;
+      subtitle = text.subtitle;
     }
     if (summary) {
       const parts = [`경기 시간 ${formatTime(summary.elapsedTicks)}`];
