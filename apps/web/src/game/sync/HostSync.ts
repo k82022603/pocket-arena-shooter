@@ -6,6 +6,7 @@ import { PositionHistory } from '../../sim/history';
 import { decodeCharacter, decodeInput, encodeCharacter, encodeSnapshot } from '../../sim/serialize';
 import { EMPTY_INPUT, SIM, type GameMode, type InputFrame, type SimState } from '../../sim/types';
 import { INTERP_DELAY_TICKS, monotonicTick, type GameSync, type RenderState, type SyncLink } from './GameSync';
+import type { SimEventSink } from '../../sim/events';
 
 const SNAPSHOT_INTERVAL_TICKS = 3;
 // 게스트 입력을 이 이상 쌓아두지 않는다 (60Hz 기준 100ms). 넘치면 오래된 것부터 버려 지연을 묶는다.
@@ -34,6 +35,7 @@ export class HostSync implements GameSync {
   private lagTicks = 0;
   private finished = false;
   private droppedInputs = 0;
+  private sink: SimEventSink | null = null;
 
   constructor(
     private readonly transport: SyncLink,
@@ -45,6 +47,10 @@ export class HostSync implements GameSync {
     this.state.tick = monotonicTick();
     setPlayerLoadout(this.state, 0, weapon);
     transport.send('event', encodeCharacter(local, weapon));
+  }
+
+  setEventSink(sink: SimEventSink | null): void {
+    this.sink = sink;
   }
 
   resync(): void {
@@ -94,6 +100,7 @@ export class HostSync implements GameSync {
       inputTicks: [this.state.tick + 1, this.ackTick],
       bulletLag: [0, this.lagTicks],
       history: this.history,
+      onEvent: this.sink ?? undefined,
     });
 
     if (outcomeOf(this.state) !== null) {

@@ -1,6 +1,7 @@
 import { CHARACTERS, type CharacterId } from './characters';
 import { activePlayers, createCoopState, stepCoop } from './coop';
 import type { PositionHistory } from './history';
+import type { DamageSource, SimEventSink } from './events';
 import { nextRandom } from './prng';
 import {
   COOP,
@@ -23,6 +24,8 @@ export interface StepOptions {
   // 각 플레이어가 쏜 탄환의 판정 되감기 틱 수.
   bulletLag?: readonly [number, number];
   history?: PositionHistory;
+  // 피해·격파·부활을 바깥에 알리는 싱크. 무엇에 맞았는지는 여기로만 나간다.
+  onEvent?: SimEventSink;
 }
 
 export interface CreateOptions {
@@ -108,9 +111,9 @@ export function step(state: SimState, inputs: readonly [InputFrame, InputFrame],
   }
   opts.history?.record(state.tick, state.players);
   if (state.coop) opts.history?.recordEnemies(state.tick, state.coop.enemies);
-  stepBullets(state, opts.history);
+  stepBullets(state, opts.history, opts.onEvent);
   stepPickups(state);
-  if (state.mode === 'coop') stepCoop(state);
+  if (state.mode === 'coop') stepCoop(state, opts.onEvent);
 }
 
 // 이동·조준·대시·쿨다운만 진행한다. 발사는 consumeFire/makeBullets로 분리해 게스트 예측에서 재사용한다.
@@ -204,26 +207,36 @@ export function bulletHits(b: BulletState, tx: number, ty: number, targetRadius:
 }
 
 // 플레이어에게 피해를 주고 통계에 반영한다. 실제로 깎인 양을 돌려준다.
-export function damagePlayer(state: SimState, target: PlayerState, amount: number): number {
+export function damagePlayer(
+  state: SimState,
+  target: PlayerState,
+  amount: number,
+  by: DamageSource,
+  onEvent?: SimEventSink,
+): number {
   const dealt = Math.min(target.hp, amount);
   if (dealt <= 0) return 0;
   target.hp -= dealt;
   const stats = state.stats[target.id];
   stats.damageTaken += dealt;
-  if (target.hp <= 0) stats.downs += 1;
+  onEvent?.({ kind: 'hurt', target: target.id, amount: dealt, by });
+  if (target.hp <= 0) {
+    stats.downs += 1;
+    onEvent?.({ kind: 'down', target: target.id });
+  }
   return dealt;
 }
 
-function stepBullets(state: SimState, history?: PositionHistory): void {
+function stepBullets(state: SimState, history?: PositionHistory, onEvent?: SimEventSink): void {
   const alive: BulletState[] = [];
   for (const b of state.bullets) {
     if (!advanceBullet(b)) continue;
     const consumed =
       b.owner === ENEMY_OWNER
-        ? enemyBulletHit(state, b)
+        ? enemyBulletHit(state, b, onEvent)
         : state.mode === 'coop'
-          ? coopBulletHit(state, b, history)
-          : duelBulletHit(state, b, history);
+          ? coopBulletHit(state, b, history, onEvent)
+          : duelBulletHit(state, b, history, onEvent);
     if (consumed) continue;
     alive.push(b);
   }
@@ -231,7 +244,7 @@ function stepBullets(state: SimState, history?: PositionHistory): void {
 }
 
 // 맞혔을 때 탄환을 없애야 하면 true. 관통탄은 같은 대상을 다시 맞히지 않고 계속 날아간다.
-function duelBulletHit(state: SimState, b: BulletState, history?: PositionHistory): boolean {
+function duelBulletHit(state: SimState, b: BulletState, history?: PositionHistory, onEvent?: SimEventSink): boolean {
   const target = state.players[b.owner === 0 ? 1 : 0];
   if (b.hits.includes(target.id)) return false;
   const pose = b.lagTicks > 0 ? history?.lookup(target.id, state.tick - b.lagTicks) : null;
@@ -239,7 +252,7 @@ function duelBulletHit(state: SimState, b: BulletState, history?: PositionHistor
   const ty = pose?.y ?? target.y;
   const invulnerable = (pose?.dashTicks ?? target.dashTicks) > 0;
   if (target.hp > 0 && !invulnerable && bulletHits(b, tx, ty)) {
-    const dealt = damagePlayer(state, target, b.damage);
+    const dealt = damagePlayer(state, target, b.damage, 'peerShot', onEvent);
     const shooter = state.stats[b.owner as 0 | 1];
     shooter.hits += 1;
     shooter.damageDealt += dealt;
@@ -252,7 +265,7 @@ function duelBulletHit(state: SimState, b: BulletState, history?: PositionHistor
   return false;
 }
 
-function coopBulletHit(state: SimState, b: BulletState, history?: PositionHistory): boolean {
+function coopBulletHit(state: SimState, b: BulletState, history?: PositionHistory, onEvent?: SimEventSink): boolean {
   const coop = state.coop;
   if (!coop) return false;
   const pierce = WEAPONS[b.kind].pierce;
@@ -266,23 +279,28 @@ function coopBulletHit(state: SimState, b: BulletState, history?: PositionHistor
     const shooter = state.stats[b.owner as 0 | 1];
     shooter.hits += 1;
     shooter.damageDealt += dealt;
-    if (e.hp <= 0) shooter.kills += 1;
+    if (e.hp <= 0) {
+      shooter.kills += 1;
+      onEvent?.({ kind: 'kill', by: b.owner as 0 | 1, enemy: e.kind });
+    }
     if (!pierce) return true;
     b.hits.push(e.id);
   }
   return false;
 }
 
-function enemyBulletHit(state: SimState, b: BulletState): boolean {
+function enemyBulletHit(state: SimState, b: BulletState, onEvent?: SimEventSink): boolean {
   for (const p of activePlayers(state)) {
     if (p.hp > 0 && p.dashTicks === 0 && bulletHits(b, p.x, p.y)) {
-      damagePlayer(state, p, b.damage);
+      damagePlayer(state, p, b.damage, 'gunnerShot', onEvent);
       return true;
     }
   }
   const coop = state.coop;
   if (coop && bulletHits(b, COOP.coreX, COOP.coreY, COOP.coreRadius)) {
-    coop.coreHp = Math.max(0, coop.coreHp - b.damage);
+    const dealt = Math.min(coop.coreHp, b.damage);
+    coop.coreHp -= dealt;
+    if (dealt > 0) onEvent?.({ kind: 'core', amount: dealt, by: 'gunnerShot' });
     return true;
   }
   return false;

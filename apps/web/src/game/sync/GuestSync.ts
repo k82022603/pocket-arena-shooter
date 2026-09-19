@@ -83,6 +83,9 @@ export class GuestSync implements GameSync {
   }
 
   // 끊긴 동안의 스냅샷·입력은 버리고 호스트가 재전송하는 스냅샷부터 다시 맞춘다.
+  // 게스트는 시뮬레이션을 돌리지 않으므로 낼 사건이 없다. 피해 주체는 호스트 기록에만 남는다.
+  setEventSink(): void {}
+
   resync(): void {
     this.snapshots.length = 0;
     this.pending.length = 0;

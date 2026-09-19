@@ -5,12 +5,14 @@ import { nextRandom } from '../../sim/prng';
 import { EMPTY_INPUT, type GameMode, type InputFrame, type SimState } from '../../sim/types';
 import { LOADOUTS, type WeaponKind } from '../../sim/weapons';
 import type { GameSync, RenderState } from './GameSync';
+import type { SimEventSink } from '../../sim/events';
 
 export class SoloSync implements GameSync {
   readonly kind = 'solo' as const;
   readonly localId = 0 as const;
   private readonly state: SimState;
   private readonly bot: BotMemory = createBotMemory();
+  private sink: SimEventSink | null = null;
 
   constructor(local: CharacterId, mode: GameMode, weapon: WeaponKind) {
     const foe = characterAt(characterIndex(local) + 1);
@@ -28,7 +30,7 @@ export class SoloSync implements GameSync {
   step(local: InputFrame): void {
     // 1:1 대전에서는 상대를 AI가 조종한다. 협동은 1인 방어라 두 번째 슬롯이 비어 있다.
     const foe = this.state.mode === 'duel' ? botInput(this.state, 1, this.bot) : EMPTY_INPUT;
-    step(this.state, [local, foe]);
+    step(this.state, [local, foe], { onEvent: this.sink ?? undefined });
   }
 
   handleMessage(): void {}
@@ -43,6 +45,10 @@ export class SoloSync implements GameSync {
 
   summary(): MatchSummary {
     return summarize(this.state);
+  }
+
+  setEventSink(sink: SimEventSink | null): void {
+    this.sink = sink;
   }
 
   resync(): void {}

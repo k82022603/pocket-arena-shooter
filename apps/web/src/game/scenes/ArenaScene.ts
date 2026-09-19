@@ -176,6 +176,7 @@ export class ArenaScene extends Phaser.Scene {
       viewport: Math.round(this.scale.width) + 'x' + Math.round(this.scale.height),
     });
     (window as unknown as { __record?: MatchRecorder }).__record = this.recorder;
+    this.sync.setEventSink(this.recorder.onSimEvent);
 
     // 맨 위 줄이 내 것임을 못 박는다. 2인일 때만 보여준다.
     this.hudMe = this.add

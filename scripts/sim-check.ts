@@ -7,6 +7,7 @@ import { PositionHistory } from '../apps/web/src/sim/history';
 import { CHARACTERS } from '../apps/web/src/sim/characters';
 import { coopResultText } from '../apps/web/src/game/outcomeText';
 import { MatchRecorder, SAMPLE_INTERVAL_TICKS } from '../apps/web/src/game/recorder';
+import type { SimEvent } from '../apps/web/src/sim/events';
 import { SessionLink } from '../apps/web/src/net/session';
 import { HostSync } from '../apps/web/src/game/sync/HostSync';
 import type { SyncLink } from '../apps/web/src/game/sync/GameSync';
@@ -367,6 +368,45 @@ check('봇이 가만히 선 상대를 이김', b.players[0].hp === 0 && b.elapse
     '명중률이 100%를 넘지 않는다',
     st.shots > 0 && st.hits <= st.shots,
     '발사 ' + st.shots + ' 명중 ' + st.hits + ' (' + ((st.hits / st.shots) * 100).toFixed(0) + '%)',
+  );
+}
+
+
+// 피해 주체가 사건으로 나와야 한다 (체력이 줄었다는 것만으로는 원인을 못 찾는다)
+{
+  const ev: SimEvent[] = [];
+  const c = createInitialState(['lachesis', 'clotho'], { mode: 'coop', playerCount: 2, seed: 3 });
+  c.coop!.timer = 100_000;
+  c.players[0].x = 400;
+  c.players[0].y = 360;
+  c.players[1].x = 1000;
+  c.players[1].y = 100;
+  // 척후병을 플레이어 0 바로 옆에, 포수를 코어 쪽으로
+  c.coop!.enemies.push({ id: 1, kind: 0, x: 410, y: 360, hp: 30, fireCooldown: 0, contactCooldown: 0 });
+  for (let i = 0; i < 120; i++) step(c, [EMPTY_INPUT, EMPTY_INPUT], { onEvent: (e) => ev.push(e) });
+
+  const hurt = ev.filter((e) => e.kind === 'hurt');
+  const byScout = hurt.filter((e) => e.kind === 'hurt' && e.by === 'scoutContact');
+  check(
+    '접촉 피해가 척후병으로 기록된다',
+    hurt.length > 0 && byScout.length === hurt.length && hurt.every((e) => e.kind === 'hurt' && e.target === 0),
+    '피해 사건 ' + hurt.length + '건, 전부 scoutContact',
+  );
+
+  // 격파도 주체와 함께 나온다
+  const ev2: SimEvent[] = [];
+  const k = createInitialState(['atropos', 'clotho'], { mode: 'coop', playerCount: 2, seed: 3 });
+  k.coop!.timer = 100_000;
+  k.players[0].x = 400;
+  k.players[0].y = 360;
+  k.coop!.enemies.push({ id: 9, kind: 0, x: 700, y: 360, hp: 30, fireCooldown: 0, contactCooldown: 0 });
+  const fire2: InputFrame = { ...EMPTY_INPUT, aimX: 1, aimY: 0, fire: true };
+  for (let i = 0; i < 180; i++) step(k, [fire2, EMPTY_INPUT], { onEvent: (e) => ev2.push(e) });
+  const kills = ev2.filter((e) => e.kind === 'kill');
+  check(
+    '격파가 누가 무엇을 잡았는지와 함께 기록된다',
+    kills.length >= 1 && kills[0]!.kind === 'kill' && kills[0]!.by === 0 && kills[0]!.enemy === 0,
+    '격파 ' + kills.length + '건',
   );
 }
 

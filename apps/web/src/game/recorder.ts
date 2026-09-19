@@ -1,5 +1,6 @@
 import type { CharacterId } from '../sim/characters';
-import type { GameMode } from '../sim/types';
+import type { EnemyKind, GameMode } from '../sim/types';
+import type { DamageSource, SimEvent } from '../sim/events';
 
 // 경기 중 무엇이 일어났는지 기록한다. 화면을 캡처해 주고받는 대신 파일 하나로 상황을 넘기기 위한 것이다.
 //
@@ -34,6 +35,13 @@ export interface RecordSample {
   wave?: number;
   core?: number;
   enemies?: number;
+  /** 이 구간에 각 플레이어가 무엇에 얼마나 맞았는지. 표본만으로는 체력이 준 것만 보여서 붙였다 */
+  hurt0?: Partial<Record<DamageSource, number>>;
+  hurt1?: Partial<Record<DamageSource, number>>;
+  /** 이 구간에 코어가 무엇에 얼마나 깎였는지 */
+  coreHurt?: Partial<Record<DamageSource, number>>;
+  /** 이 구간의 격파 수 (적 종류별) */
+  kills?: Partial<Record<EnemyKind, number>>;
 }
 
 export interface RecordEvent {
@@ -62,6 +70,8 @@ export interface MatchRecord {
 
 export class MatchRecorder {
   private readonly events: RecordEvent[] = [];
+  // 다음 표본까지 모을 피해 내역. 매 사건을 다 적으면 파일이 커지므로 0.5초 단위로 합친다.
+  private bucket = MatchRecorder.emptyBucket();
   private samples: RecordSample[] = [];
   private droppedSamples = 0;
 
@@ -73,7 +83,41 @@ export class MatchRecorder {
     if (this.events.length < 200) this.events.push({ t: tick, kind, detail });
   }
 
+  /** 시뮬레이션 사건을 받는다. step에 넣을 싱크로 그대로 쓴다. */
+  readonly onSimEvent = (e: SimEvent): void => {
+    const add = (m: Record<string, number>, key: string, n: number): void => {
+      m[key] = (m[key] ?? 0) + n;
+    };
+    if (e.kind === 'hurt') add(e.target === 0 ? this.bucket.hurt0 : this.bucket.hurt1, e.by, e.amount);
+    else if (e.kind === 'core') add(this.bucket.core, e.by, e.amount);
+    else if (e.kind === 'kill') add(this.bucket.kills, String(e.enemy), 1);
+    else if (e.kind === 'down') this.event(this.lastTick, 'down', 'P' + e.target);
+    else if (e.kind === 'revive') this.event(this.lastTick, 'revive', 'P' + e.target);
+  };
+
+  private lastTick = 0;
+
+  private static emptyBucket() {
+    return {
+      hurt0: {} as Record<string, number>,
+      hurt1: {} as Record<string, number>,
+      core: {} as Record<string, number>,
+      kills: {} as Record<string, number>,
+    };
+  }
+
+  private static pick(m: Record<string, number>): Record<string, number> | undefined {
+    return Object.keys(m).length > 0 ? m : undefined;
+  }
+
   sample(s: RecordSample): void {
+    this.lastTick = s.t;
+    const b = this.bucket;
+    this.bucket = MatchRecorder.emptyBucket();
+    s.hurt0 = MatchRecorder.pick(b.hurt0) as RecordSample['hurt0'];
+    s.hurt1 = MatchRecorder.pick(b.hurt1) as RecordSample['hurt1'];
+    s.coreHurt = MatchRecorder.pick(b.core) as RecordSample['coreHurt'];
+    s.kills = MatchRecorder.pick(b.kills) as RecordSample['kills'];
     this.samples.push(s);
     if (this.samples.length > MAX_SAMPLES) {
       // 초반 구간은 남기고 중간을 버린다

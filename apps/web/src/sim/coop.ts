@@ -1,6 +1,7 @@
 import { CHARACTERS } from './characters';
 import { damagePlayer } from './core';
 import { nextRandom } from './prng';
+import { ENEMY_CONTACT_SOURCE, type SimEventSink } from './events';
 import {
   COOP,
   ENEMIES,
@@ -59,13 +60,13 @@ export function waveComposition(wave: number, playerCount: 1 | 2 = 2): EnemyKind
   return queue;
 }
 
-export function stepCoop(state: SimState): void {
+export function stepCoop(state: SimState, onEvent?: SimEventSink): void {
   const coop = state.coop;
   if (!coop) return;
   stepWaves(state, coop);
-  stepEnemies(state, coop);
+  stepEnemies(state, coop, onEvent);
   coop.enemies = coop.enemies.filter((e) => e.hp > 0);
-  stepRevive(state);
+  stepRevive(state, onEvent);
 }
 
 function stepWaves(state: SimState, coop: CoopState): void {
@@ -150,7 +151,7 @@ function pickTarget(state: SimState, e: EnemyState): Target {
   return { x: best.x, y: best.y, radius: SIM.playerRadius, player: best };
 }
 
-function stepEnemies(state: SimState, coop: CoopState): void {
+function stepEnemies(state: SimState, coop: CoopState, onEvent?: SimEventSink): void {
   for (const e of coop.enemies) {
     const spec = ENEMIES[e.kind];
     if (e.contactCooldown > 0) e.contactCooldown -= 1;
@@ -174,10 +175,13 @@ function stepEnemies(state: SimState, coop: CoopState): void {
     const reach = spec.radius + target.radius;
     if (dist <= reach && e.contactCooldown === 0) {
       e.contactCooldown = spec.contactIntervalTicks;
+      const by = ENEMY_CONTACT_SOURCE[e.kind];
       if (target.player) {
-        if (target.player.dashTicks === 0) damagePlayer(state, target.player, spec.contactDamage);
+        if (target.player.dashTicks === 0) damagePlayer(state, target.player, spec.contactDamage, by, onEvent);
       } else {
-        coop.coreHp = Math.max(0, coop.coreHp - spec.contactDamage);
+        const dealt = Math.min(coop.coreHp, spec.contactDamage);
+        coop.coreHp -= dealt;
+        if (dealt > 0) onEvent?.({ kind: 'core', amount: dealt, by });
       }
     }
 
@@ -229,7 +233,7 @@ function separateEnemies(enemies: EnemyState[]): void {
   }
 }
 
-function stepRevive(state: SimState): void {
+function stepRevive(state: SimState, onEvent?: SimEventSink): void {
   if (state.playerCount < 2) return;
   for (const downed of state.players) {
     if (downed.hp > 0) continue;
@@ -240,6 +244,7 @@ function stepRevive(state: SimState): void {
       if (downed.reviveProgress >= COOP.reviveTicks) {
         downed.reviveProgress = 0;
         downed.hp = Math.floor(CHARACTERS[downed.character].stats.maxHp * COOP.reviveHpRatio);
+        onEvent?.({ kind: 'revive', target: downed.id });
       }
     } else {
       downed.reviveProgress = Math.max(0, downed.reviveProgress - 2);

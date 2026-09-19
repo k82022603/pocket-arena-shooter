@@ -1,6 +1,7 @@
 import type { Channel } from '../../net/transport';
 import type { MatchSummary, Outcome } from '../../sim/core';
 import { SIM, type InputFrame, type SimState } from '../../sim/types';
+import type { SimEventSink } from '../../sim/events';
 
 export type RenderState = Pick<SimState, 'tick' | 'mode' | 'playerCount' | 'players' | 'bullets' | 'pickups' | 'coop'>;
 
@@ -15,6 +16,8 @@ export interface GameSync {
   // 재접속 직후: 버퍼를 비우고 상대에게 필요한 상태(캐릭터, 스냅샷)를 다시 보낸다.
   resync(): void;
   debugInfo(): string;
+  // 시뮬레이션을 직접 돌리는 쪽(솔로·호스트)만 피해 주체 같은 사건을 낸다. 게스트는 무시한다.
+  setEventSink(sink: SimEventSink | null): void;
 }
 
 export interface SyncLink {
