@@ -13,10 +13,10 @@ interface PortraitSpec {
 
 // 단독 전신 일러스트(흰 배경). 예비: fates-trio.webp(세 자매 그룹), est-black-knight.png, atropos2.jpg(핑크 제복), est1/6(오렌지 드레스)
 const TEXTURES: Record<string, string> = {
-  'fatima-lachesis': '/fatima/laki2.jpg',
-  'fatima-clotho': '/fatima/clotho1.jpg',
-  'fatima-atropos': '/fatima/atropos1.jpg',
-  'fatima-est': '/fatima/est2.jpg',
+  'fatima-lachesis': `${import.meta.env.BASE_URL}fatima/laki2.jpg`,
+  'fatima-clotho': `${import.meta.env.BASE_URL}fatima/clotho1.jpg`,
+  'fatima-atropos': `${import.meta.env.BASE_URL}fatima/atropos1.jpg`,
+  'fatima-est': `${import.meta.env.BASE_URL}fatima/est2.jpg`,
 };
 
 const SPECS: Record<CharacterId, PortraitSpec> = {

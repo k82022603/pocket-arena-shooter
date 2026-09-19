@@ -5,6 +5,7 @@
 - 기획서: [docs/모바일_웹_슈팅게임_기획서.md](docs/모바일_웹_슈팅게임_기획서.md)
 - 캐릭터 설정: [docs/캐릭터_설정.md](docs/캐릭터_설정.md)
 - 원작 일러스트는 저작권 때문에 저장소에 포함하지 않습니다. 초상 카드를 보려면 [apps/web/public/fatima/README.md](apps/web/public/fatima/README.md)대로 이미지를 직접 넣어야 합니다 (없어도 게임은 동작)
+- 블루투스 대신 Wi‑Fi(WebRTC)로 연결하는 이유와 노트북 없이 폰끼리 플레이하는 방법: [docs/연결_방식_블루투스_대신_WiFi.md](docs/연결_방식_블루투스_대신_WiFi.md)
 
 ## 구조
 
@@ -49,6 +50,14 @@ npm run dev:https
 ```bash
 npm run typecheck
 ```
+
+## 호스팅 (노트북 없이 폰끼리 플레이)
+
+시그널링 서버는 방 코드와 연결 협상만 중개하므로 무료 호스팅으로 충분합니다.
+
+1. **시그널링 → Render**: [render.yaml](render.yaml) 블루프린트. Render 대시보드 → New → Blueprint → 이 저장소 → Apply. 배포 후 `https://<이름>.onrender.com/healthz`가 `{"ok":true}`를 주면 완료. 클라이언트에는 `wss://<이름>.onrender.com`을 `VITE_SIGNALING_URL`로 준다. 무료 플랜은 15분 유휴 후 잠들어 첫 접속이 30~60초 느릴 수 있다
+2. **웹 앱 → GitHub Pages** (선택, 공개 URL이 생기므로 주의): 저장소 Settings → Pages → Source "GitHub Actions", Variables에 `SIGNALING_URL` 추가, Actions 탭에서 "Deploy web to GitHub Pages" 수동 실행. 주소는 `https://<계정>.github.io/<저장소>/`. 저장소에 없는 초상 이미지는 Pages에도 없다
+3. 노트북에서 개발 서버를 쓰되 시그널링만 호스팅 것을 쓰려면 `apps/web/.env`에 `VITE_SIGNALING_URL=wss://...`
 
 ## 현재 상태 (M1 초기 골격)
 

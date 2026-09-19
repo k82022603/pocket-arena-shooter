@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { createServer } from 'node:http';
 import { WebSocketServer, WebSocket, type RawData } from 'ws';
 import { REJOIN_GRACE_MS, type ClientToServer, type PeerRole, type ServerErrorCode, type ServerToClient } from '@shooter/protocol';
 
@@ -131,7 +132,18 @@ function handleControl(ws: WebSocket, msg: ClientToServer): void {
   }
 }
 
-const wss = new WebSocketServer({ port: PORT });
+// HTTP 서버 위에 웹소켓을 얹는다. 호스팅 서비스의 헬스체크와 브라우저에서 주소 확인용 응답을 준다.
+const server = createServer((req, res) => {
+  if (req.url === '/healthz') {
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ ok: true, rooms: rooms.size }));
+    return;
+  }
+  res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' });
+  res.end('pocket-arena-shooter signaling server\n');
+});
+
+const wss = new WebSocketServer({ server });
 
 wss.on('connection', (ws) => {
   ws.on('message', (raw: RawData, isBinary: boolean) => {
@@ -152,4 +164,9 @@ wss.on('connection', (ws) => {
   ws.on('close', () => handleClose(ws));
 });
 
-console.log(`[signaling] listening on ws://0.0.0.0:${PORT}`);
+// 호스팅 프록시가 유휴 연결을 끊지 않도록 30초마다 ping
+setInterval(() => {
+  for (const client of wss.clients) if (client.readyState === WebSocket.OPEN) client.ping();
+}, 30_000).unref();
+
+server.listen(PORT, () => console.log(`[signaling] listening on http+ws://0.0.0.0:${PORT}`));

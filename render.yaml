@@ -1,0 +1,17 @@
+# Render 블루프린트: 시그널링 서버 무료 호스팅
+# 사용법: https://dashboard.render.com → New → Blueprint → 이 저장소 선택 → Apply
+# 무료 플랜은 15분 유휴 후 잠들며 첫 접속 때 30~60초 걸려 깨어난다.
+services:
+  - type: web
+    name: pocket-arena-signaling
+    runtime: node
+    plan: free
+    region: singapore
+    buildCommand: npm ci
+    startCommand: npm run start -w apps/signaling
+    healthCheckPath: /healthz
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: NPM_CONFIG_PRODUCTION
+        value: "false"
