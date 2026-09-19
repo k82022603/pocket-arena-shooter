@@ -7,6 +7,9 @@ import { PositionHistory } from '../apps/web/src/sim/history';
 import { CHARACTERS } from '../apps/web/src/sim/characters';
 import { coopResultText } from '../apps/web/src/game/outcomeText';
 import { SessionLink } from '../apps/web/src/net/session';
+import { HostSync } from '../apps/web/src/game/sync/HostSync';
+import type { SyncLink } from '../apps/web/src/game/sync/GameSync';
+import { SIM } from '../apps/web/src/sim/types';
 import type { Channel, MessageHandler, Transport, Unsubscribe } from '../apps/web/src/net/transport';
 import { waveComposition } from '../apps/web/src/sim/coop';
 import { PICKUP } from '../apps/web/src/sim/weapons';
@@ -246,6 +249,106 @@ check('봇이 가만히 선 상대를 이김', b.players[0].hp === 0 && b.elapse
   );
 
 
+}
+
+
+// 실제 호스트-게스트 연결 위에서: 이동이 반영되는가, 호스트가 느리면 어떻게 되는가, 적이 죽는가
+{
+  interface Wire { at: number; channel: Channel; data: Uint8Array }
+
+  const play = (hostTicksPerSec: number, seconds: number, withEnemy: boolean) => {
+    const rtt = 20;
+    const toHost: Wire[] = [];
+    const toGuest: Wire[] = [];
+    let now = 0;
+    const pipe = (q: Wire[]) => (c: Channel, d: Uint8Array): void => {
+      q.push({ at: now + rtt / 2, channel: c, data: new Uint8Array(d) });
+    };
+    const host = new HostSync({ rtt, send: pipe(toGuest) } as SyncLink, 'atropos', 'coop', 0);
+    const guest = new GuestSync({ rtt, send: pipe(toHost) } as SyncLink, 'est', 0, () => now);
+    const deliver = (q: Wire[], sy: { handleMessage: (c: Channel, d: Uint8Array) => void }) => {
+      const ready = q.filter((m) => m.at <= now);
+      for (const m of ready) q.splice(q.indexOf(m), 1);
+      for (const m of ready) sy.handleMessage(m.channel, m.data);
+    };
+    const hs = host.renderState() as unknown as {
+      players: { x: number; y: number }[];
+      pickups: unknown[];
+      coop: { timer: number; enemies: { id: number; kind: number; x: number; y: number; hp: number; fireCooldown: number; contactCooldown: number }[] };
+    };
+    // 재현성을 위해 웨이브와 픽업을 묶어 둔다
+    const quiet = () => {
+      hs.coop.timer = 1_000_000;
+      hs.pickups.length = 0;
+      if (!withEnemy) hs.coop.enemies.length = 0;
+    };
+    quiet();
+    hs.players[1].x = 400;
+    hs.players[1].y = 360;
+    if (withEnemy) {
+      hs.coop.enemies.length = 0;
+      hs.coop.enemies.push({ id: 1, kind: 0, x: 700, y: 360, hp: 30, fireCooldown: 0, contactCooldown: 0 });
+    }
+    const startX = hs.players[1].x;
+
+    const input: InputFrame = withEnemy
+      ? { ...EMPTY_INPUT, aimX: 1, aimY: 0, fire: true }
+      : { ...EMPTY_INPUT, moveX: 1, aimX: 1 };
+    let hostSteps = 0;
+    const total = seconds * SIM.tickRate;
+    for (let i = 0; i < total; i++) {
+      now = (i * 1000) / SIM.tickRate;
+      deliver(toHost, host);
+      deliver(toGuest, guest);
+      guest.step(input);
+      if (Math.floor(((i + 1) * hostTicksPerSec) / SIM.tickRate) > hostSteps) {
+        hostSteps += 1;
+        quiet();
+        host.step(EMPTY_INPUT);
+      }
+    }
+    const shown = guest.renderState(now).players[1];
+    const dropped = Number(/drop (\d+)/.exec(host.debugInfo())?.[1] ?? -1);
+    return {
+      dropped,
+      authMoved: hs.players[1].x - startX,
+      gap: Math.abs(shown.x - hs.players[1].x),
+      enemyHp: hs.coop.enemies[0]?.hp ?? 0,
+      enemyGone: hs.coop.enemies.length === 0,
+      hostRate: guest.hostTickRate,
+    };
+  };
+
+  // 건강한 호스트: 이동이 그대로 반영되고 되돌아감이 없다
+  const ok = play(SIM.tickRate, 2, false);
+  check(
+    '건강한 호스트에서는 게스트 이동이 그대로 반영된다',
+    ok.dropped === 0 && ok.authMoved > 380 && ok.gap < 25,
+    '버린 입력 ' + ok.dropped + ', 권위 이동 ' + ok.authMoved.toFixed(0) + 'px, 화면 차이 ' + ok.gap.toFixed(0) + 'px',
+  );
+
+  // 굶은 호스트: 입력이 버려지고 이동이 반영되지 않는다 (고무줄의 원인)
+  const starved = play(6, 2, false);
+  check(
+    '호스트가 굶으면 게스트 입력이 버려지고 이동이 반영되지 않는다',
+    starved.dropped > 50 && starved.authMoved < ok.authMoved / 2,
+    '버린 입력 ' + starved.dropped + ', 권위 이동 ' + starved.authMoved.toFixed(0) + 'px (정상 ' + ok.authMoved.toFixed(0) + 'px)',
+  );
+
+  // 게스트가 원인을 알 수 있어야 한다
+  check(
+    '게스트가 호스트의 느린 진행 속도를 감지한다',
+    ok.hostRate > 45 && starved.hostRate < 45,
+    '정상 ' + ok.hostRate.toFixed(0) + 't/s, 굶음 ' + starved.hostRate.toFixed(0) + 't/s',
+  );
+
+  // 게스트가 계속 쏘면 적이 실제로 죽는다
+  const shot = play(SIM.tickRate, 3, true);
+  check(
+    '게스트가 계속 쏘면 적이 사라진다',
+    shot.enemyGone,
+    shot.enemyGone ? '적 격파됨' : '남은 HP ' + shot.enemyHp,
+  );
 }
 
 

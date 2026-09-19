@@ -57,6 +57,9 @@ export class ArenaScene extends Phaser.Scene {
   private banner!: Phaser.GameObjects.Text;
   private waveText!: Phaser.GameObjects.Text;
   private hudMe!: Phaser.GameObjects.Text;
+  private slowWarn!: Phaser.GameObjects.Text;
+  private slowFrames = 0;
+  private slowSince = 0;
   private hudPortraits: [Phaser.GameObjects.Container | null, Phaser.GameObjects.Container | null] = [null, null];
   private hudPortraitIds: [CharacterId | null, CharacterId | null] = [null, null];
   private reconnectShade!: Phaser.GameObjects.Rectangle;
@@ -172,6 +175,10 @@ export class ArenaScene extends Phaser.Scene {
       .text(this.scale.width / 2, 58, '', { fontFamily: FONT, fontSize: '22px', color: '#ffe066' })
       .setOrigin(0.5, 0)
       .setDepth(50);
+    this.slowWarn = this.add
+      .text(this.scale.width / 2, 90, '', { fontFamily: FONT, fontSize: '13px', color: '#ff8a80' })
+      .setOrigin(0.5, 0)
+      .setDepth(50);
     this.waveText = this.add
       .text(this.scale.width / 2, this.scale.height / 2, '', {
         fontFamily: FONT,
@@ -245,6 +252,7 @@ export class ArenaScene extends Phaser.Scene {
       return;
     }
     this.hideReconnectOverlay();
+    this.checkSlowHost(deltaMs);
     this.accumulator += Math.min(deltaMs, 100) / 1000;
     while (this.accumulator >= SIM.dt) {
       this.accumulator -= SIM.dt;
@@ -723,6 +731,35 @@ export class ArenaScene extends Phaser.Scene {
   // 초상 오른쪽의 HP 바. 픽업 무기·부스트가 걸려 있으면 바 아래 얇은 띠로 표시한다.
   // HUD는 항상 내 줄을 맨 위에 둔다. 슬롯 번호로 배치하면 방을 만든 쪽과 참가한 쪽에서
   // 내 바의 위치가 뒤바뀌어, 상대 체력이 줄어드는 것을 내 것으로 읽게 된다.
+  // 방을 만든 쪽이 초당 60틱을 못 돌리면 시뮬레이션이 실시간보다 느려진다. 그러면 참가한 쪽의 입력이
+  // 호스트 큐에서 버려지고 화면이 계속 제자리로 되돌아간다. 게스트가 고칠 수 있는 문제가 아니므로
+  // 양쪽에 원인을 알려 호스트를 바꾸도록 안내한다.
+  private checkSlowHost(deltaMs: number): void {
+    const now = performance.now();
+    let slow: boolean;
+    if (this.sync.kind === 'guest') {
+      slow = (this.sync as GuestSync).hostTickRate < 45;
+    } else {
+      // 프레임 간격이 100ms를 넘으면 누적기 상한에 걸려 시뮬레이션이 뒤처진다
+      if (deltaMs > 100) this.slowFrames += 1;
+      else this.slowFrames = Math.max(0, this.slowFrames - 1);
+      slow = this.slowFrames > 10;
+    }
+    if (!slow) {
+      this.slowSince = 0;
+      this.slowWarn.setText('');
+      return;
+    }
+    if (this.slowSince === 0) this.slowSince = now;
+    // 잠깐 튄 것으로 경고가 번쩍이지 않게 1초 이상 이어질 때만 띄운다
+    if (now - this.slowSince < 1000) return;
+    this.slowWarn.setText(
+      this.sync.kind === 'guest'
+        ? '방을 만든 기기가 따라오지 못해 경기가 느립니다 · 그 기기에서 다른 창을 앞으로 두지 마세요'
+        : '이 기기가 초당 60틱을 못 돌려 경기가 느립니다 · 다른 창을 앞으로 두지 마세요',
+    );
+  }
+
   private hudSlot(id: 0 | 1): 0 | 1 {
     return id === this.sync.localId ? 0 : 1;
   }

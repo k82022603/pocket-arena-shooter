@@ -20,6 +20,8 @@ import { INTERP_DELAY_TICKS, monotonicTick, type GameSync, type RenderState, typ
 
 const MAX_SNAPSHOTS = 32;
 const MAX_PENDING_INPUTS = 120;
+// 호스트가 실시간보다 느리게 돌고 있는지 재는 창. 스냅샷 틱 진행량을 실제 경과 시간과 비교한다.
+const HOST_RATE_WINDOW_MS = 1000;
 
 // 보정 스무딩: 재조정으로 권위 위치가 예측과 달라도 화면에서는 즉시 순간이동하지 않는다.
 // 시뮬레이션 상태(this.predicted)는 권위대로 덮고, 차이를 "화면 오프셋"으로 들고 있다가 지수 감쇠로 0에 수렴시킨다.
@@ -64,11 +66,15 @@ export class GuestSync implements GameSync {
   private smoothY = 0;
   private smoothedAt: number | null = null;
   private snaps = 0;
+  // 호스트의 실제 진행 속도(틱/초). 60에 가까워야 정상이다.
+  hostTickRate: number = SIM.tickRate;
 
   constructor(
     private readonly transport: SyncLink,
     private readonly local: CharacterId,
     private readonly weapon: WeaponKind,
+    // 스냅샷 도착 시각의 출처. 테스트에서 가상 시계를 넣기 위해 주입 가능하게 둔다.
+    private readonly now: () => number = () => performance.now(),
   ) {
     this.placeholder = createInitialState([local, local]);
     setPlayerLoadout(this.placeholder, this.localId, weapon);
@@ -91,10 +97,29 @@ export class GuestSync implements GameSync {
     if (!snapshot) return;
     const latest = this.snapshots[this.snapshots.length - 1];
     if (latest && snapshot.state.tick <= latest.state.tick) return;
-    this.snapshots.push({ state: snapshot.state, receivedAt: performance.now() });
+    this.snapshots.push({ state: snapshot.state, receivedAt: this.now() });
     if (this.snapshots.length > MAX_SNAPSHOTS) this.snapshots.shift();
+    this.measureHostRate();
     this.reconcile(snapshot);
     this.reconcileBullets(snapshot);
+  }
+
+  // 호스트 프레임이 굶으면 호스트 시뮬레이션이 실시간보다 느려진다. 그러면 내 입력이 호스트 큐에서
+  // 버려지고, 예측은 60틱/초로 달려가 스냅샷마다 크게 되돌아간다. 게스트 쪽에서 고칠 방법은 없으므로
+  // 최소한 원인을 알 수 있도록 호스트의 실제 진행 속도를 재서 화면에 알린다.
+  private measureHostRate(): void {
+    const latest = this.snapshots[this.snapshots.length - 1];
+    if (!latest) return;
+    let oldest = latest;
+    for (const s of this.snapshots) {
+      if (latest.receivedAt - s.receivedAt <= HOST_RATE_WINDOW_MS) {
+        oldest = s;
+        break;
+      }
+    }
+    const ms = latest.receivedAt - oldest.receivedAt;
+    if (ms < HOST_RATE_WINDOW_MS / 2) return;
+    this.hostTickRate = ((latest.state.tick - oldest.state.tick) * 1000) / ms;
   }
 
   private reconcile(snapshot: Snapshot): void {
@@ -305,7 +330,7 @@ export class GuestSync implements GameSync {
 
   debugInfo(): string {
     const off = Math.hypot(this.smoothX, this.smoothY);
-    return `snap ${this.snapshots.length} pending ${this.pending.length} fix ${this.corrections} smooth ${off.toFixed(1)}px snapped ${this.snaps} shots ${this.predictedBullets.length} rejected ${this.rejectedShots}`;
+    return `host ${this.hostTickRate.toFixed(0)}t/s snap ${this.snapshots.length} pending ${this.pending.length} fix ${this.corrections} smooth ${off.toFixed(1)}px snapped ${this.snaps} shots ${this.predictedBullets.length} rejected ${this.rejectedShots}`;
   }
 }
 
