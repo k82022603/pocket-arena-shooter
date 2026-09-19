@@ -5,6 +5,8 @@ import { COOP, EMPTY_INPUT, ENEMY_OWNER, type InputFrame } from '../apps/web/src
 import { decodeCharacter, decodeInput, decodeSnapshot, encodeCharacter, encodeInput, encodeSnapshot } from '../apps/web/src/sim/serialize';
 import { PositionHistory } from '../apps/web/src/sim/history';
 import { CHARACTERS } from '../apps/web/src/sim/characters';
+import { waveComposition } from '../apps/web/src/sim/coop';
+import { PICKUP } from '../apps/web/src/sim/weapons';
 import { GuestSync } from '../apps/web/src/game/sync/GuestSync';
 import type { SyncLink } from '../apps/web/src/game/sync/GameSync';
 
@@ -186,6 +188,33 @@ check('봇이 가만히 선 상대를 이김', b.players[0].hp === 0 && b.elapse
   for (let i = 0; i < 10; i++) step(decay, [EMPTY_INPUT, EMPTY_INPUT]);
   const far = decay.players[0].reviveProgress;
   check('부활 진행도는 이탈하면 2배로 감소', near === 60 && far === 40, near + ' to ' + far);
+  // 1인 방어는 2인보다 적 편성이 적고 픽업이 더 자주 나온다 (밸런스 조정)
+  const totalFor = (pc: 1 | 2) => {
+    let n = 0;
+    for (let w = 1; w <= 10; w++) n += waveComposition(w, pc).length;
+    return n;
+  };
+  const solo10 = totalFor(1);
+  const duo10 = totalFor(2);
+  check(
+    '1인 편성은 2인보다 적다',
+    solo10 === 77 && duo10 === 175 && waveComposition(1, 1).length === 2 && waveComposition(1, 2).length === 4,
+    '10웨이브 합계 1인 ' + solo10 + '기 / 2인 ' + duo10 + '기',
+  );
+
+  const pkSolo = createInitialState(['lachesis', 'lachesis'], { mode: 'coop', playerCount: 1, seed: 5 });
+  pkSolo.coop!.timer = 100_000;
+  for (let i = 0; i < PICKUP.soloIntervalTicks; i++) step(pkSolo, [EMPTY_INPUT, EMPTY_INPUT]);
+  const pkDuo = createInitialState(['lachesis', 'clotho'], { mode: 'coop', playerCount: 2, seed: 5 });
+  pkDuo.coop!.timer = 100_000;
+  for (let i = 0; i < PICKUP.soloIntervalTicks; i++) step(pkDuo, [EMPTY_INPUT, EMPTY_INPUT]);
+  check(
+    '1인 방어는 픽업이 9초마다 나온다',
+    pkSolo.pickups.length === 1 && pkDuo.pickups.length === 0,
+    '1인 ' + pkSolo.pickups.length + '개 / 2인 ' + pkDuo.pickups.length + '개 (' + PICKUP.soloIntervalTicks + '틱 시점)',
+  );
+
+
 }
 
 

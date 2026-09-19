@@ -33,10 +33,17 @@ function alivePlayers(state: SimState): PlayerState[] {
   return activePlayers(state).filter((p) => p.hp > 0);
 }
 
-export function waveComposition(wave: number): EnemyKind[] {
-  let rushers = 2 + wave * 2;
-  let gunners = Math.floor(wave / 2);
-  let tanks = wave >= 3 ? Math.floor((wave - 1) / 2) : 0;
+// 편성은 2인 기준으로 잡았다. 1인 방어는 화력과 커버 범위가 절반이고 부활도 없어서
+// 같은 물량을 내면 코어가 멀쩡한데 플레이어가 먼저 죽는다. 그래서 적 수를 줄여 난이도를 맞춘다.
+// 배율은 자동 플레이 측정으로 정했다 (문서: 게임_매뉴얼 협동 방어전 난이도 감각).
+const SOLO_ENEMY_SCALE = 0.45;
+
+export function waveComposition(wave: number, playerCount: 1 | 2 = 2): EnemyKind[] {
+  const scale = playerCount === 1 ? SOLO_ENEMY_SCALE : 1;
+  const scaled = (n: number): number => Math.round(n * scale);
+  let rushers = Math.max(1, scaled(2 + wave * 2));
+  let gunners = scaled(Math.floor(wave / 2));
+  let tanks = wave >= 3 ? scaled(Math.floor((wave - 1) / 2)) : 0;
   const queue: EnemyKind[] = [];
   while (rushers > 0 || gunners > 0 || tanks > 0) {
     for (let i = 0; i < 2 && rushers > 0; i++, rushers--) queue.push(0);
@@ -67,7 +74,7 @@ function stepWaves(state: SimState, coop: CoopState): void {
       coop.timer -= 1;
       if (coop.timer <= 0) {
         coop.wave += 1;
-        coop.spawnQueue = waveComposition(coop.wave);
+        coop.spawnQueue = waveComposition(coop.wave, state.playerCount);
         coop.phase = 1;
         coop.timer = 0;
       }

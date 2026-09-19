@@ -13,6 +13,7 @@
     "build": "npm run build --workspaces --if-present",
     "icons": "node scripts/make-icons.mjs",
     "check:sim": "tsx scripts/sim-check.ts",
+    "check:balance": "tsx scripts/coop-balance.ts",
     "typecheck": "npm run typecheck --workspaces --if-present"
   }
 }

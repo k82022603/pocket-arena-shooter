@@ -55,6 +55,8 @@ export const PICKUP_COLORS: Record<PickupKind, number> = { 0: 0x69f0ae, 1: 0xffa
 
 export const PICKUP = {
   spawnIntervalTicks: 900,
+  // 1인 협동은 부활이 없어 한 번의 죽음이 경기를 끝낸다. 회복 기회를 늘려 그 격차를 메운다.
+  soloIntervalTicks: 540,
   max: 3,
   radius: 14,
   heal: 30,

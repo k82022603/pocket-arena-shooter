@@ -46,7 +46,7 @@ export function createInitialState(
     bullets: [],
     nextBulletId: 1,
     pickups: [],
-    pickupTimer: PICKUP.spawnIntervalTicks,
+    pickupTimer: opts.playerCount === 1 ? PICKUP.soloIntervalTicks : PICKUP.spawnIntervalTicks,
     nextPickupId: 1,
     coop: opts.mode === 'coop' ? createCoopState() : null,
   };
@@ -289,7 +289,7 @@ function enemyBulletHit(state: SimState, b: BulletState): boolean {
 function stepPickups(state: SimState): void {
   state.pickupTimer -= 1;
   if (state.pickupTimer <= 0) {
-    state.pickupTimer = PICKUP.spawnIntervalTicks;
+    state.pickupTimer = state.playerCount === 1 ? PICKUP.soloIntervalTicks : PICKUP.spawnIntervalTicks;
     if (state.pickups.length < PICKUP.max) {
       state.pickups.push({
         id: state.nextPickupId++,
