@@ -5,12 +5,13 @@ import type { EnemyKind } from './types';
 
 /** 피해를 준 주체. 협동의 적 3종은 접촉과 사격을 구분한다. */
 export type DamageSource =
-  | 'scoutContact'
-  | 'gunnerContact'
-  | 'gunnerShot'
-  | 'chargerContact'
-  | 'peerShot';
+  | 'scoutContact' // 척후병에게 닿음
+  | 'gunnerContact' // 포수에게 닿음
+  | 'gunnerShot' // 포수의 탄
+  | 'chargerContact' // 강습병에게 닿음
+  | 'peerShot'; // 대전 상대의 탄
 
+// 적 종류 → 접촉 피해의 주체
 export const ENEMY_CONTACT_SOURCE: Record<EnemyKind, DamageSource> = {
   0: 'scoutContact',
   1: 'gunnerContact',
@@ -18,10 +19,10 @@ export const ENEMY_CONTACT_SOURCE: Record<EnemyKind, DamageSource> = {
 };
 
 export type SimEvent =
-  | { kind: 'hurt'; target: 0 | 1; amount: number; by: DamageSource }
-  | { kind: 'core'; amount: number; by: DamageSource }
-  | { kind: 'down'; target: 0 | 1 }
-  | { kind: 'revive'; target: 0 | 1 }
-  | { kind: 'kill'; by: 0 | 1; enemy: EnemyKind };
+  | { kind: 'hurt'; target: 0 | 1; amount: number; by: DamageSource } // 플레이어가 맞았다
+  | { kind: 'core'; amount: number; by: DamageSource } // 코어가 깎였다
+  | { kind: 'down'; target: 0 | 1 } // 플레이어가 쓰러졌다
+  | { kind: 'revive'; target: 0 | 1 } // 짝이 일으켜 세웠다
+  | { kind: 'kill'; by: 0 | 1; enemy: EnemyKind }; // 적을 처치했다
 
-export type SimEventSink = (event: SimEvent) => void;
+export type SimEventSink = (event: SimEvent) => void; // 사건을 받는 함수. step()의 onEvent로 넣는다

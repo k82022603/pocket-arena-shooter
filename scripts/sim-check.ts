@@ -20,13 +20,16 @@ import { assistAim } from '../apps/web/src/game/aimAssist';
 import { GuestSync } from '../apps/web/src/game/sync/GuestSync';
 import type { SyncLink } from '../apps/web/src/game/sync/GameSync';
 
-let failures = 0;
+// 각 블록이 작은 경기 상태를 만들어 몇 틱 돌린 뒤, 결과를 check(이름, 통과 여부, 참고 값)로 적는다.
+// 같은 시드면 항상 같은 결과가 나오므로 실패는 곧 규칙이 바뀌었다는 뜻이다.
+
+let failures = 0; // 실패한 검사 수 (0이 아니면 종료 코드 1)
 function check(name: string, ok: boolean, detail = ''): void {
   console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${detail ? `  (${detail})` : ''}`);
   if (!ok) failures += 1;
 }
 
-const fire: InputFrame = { ...EMPTY_INPUT, aimX: 1, aimY: 0, fire: true };
+const fire: InputFrame = { ...EMPTY_INPUT, aimX: 1, aimY: 0, fire: true }; // 오른쪽을 향해 쏘는 입력 (여러 검사가 같이 쓴다)
 
 // 산탄총 픽업 → 5발 부채꼴
 const s = createInitialState(['lachesis', 'clotho'], { mode: 'duel', playerCount: 2, seed: 7 });
@@ -746,4 +749,4 @@ check('봇이 가만히 선 상대를 이김', b.players[0].hp === 0 && b.elapse
 }
 
 console.log(failures === 0 ? '\n모든 검사 통과' : `\n${failures}개 실패`);
-process.exit(failures === 0 ? 0 : 1);
+process.exit(failures === 0 ? 0 : 1); // CI나 다른 스크립트가 실패를 알 수 있게

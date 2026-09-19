@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 
-export const FONT = 'system-ui, -apple-system, "Noto Sans KR", sans-serif';
+export const FONT = 'system-ui, -apple-system, "Noto Sans KR", sans-serif'; // 기기 기본 글꼴 (웹 글꼴을 내려받지 않는다)
 
 // 화면 크기에 맞춘 UI 배율. 폰 가로(844×390)에서 보기 좋게 잡은 크기를 기준 1로 두고,
 // 큰 화면에서는 그만큼 키우고 작은 폰에서는 조금 줄인다. 글자·버튼·간격은 모두 이 값을 곱해 쓴다.
@@ -16,7 +16,7 @@ const GROWTH = 0.5;
 export function uiScale(scene: Phaser.Scene): number {
   const { width, height } = scene.scale;
   const raw = Math.min(width / DESIGN_W, height / DESIGN_H);
-  const eased = raw <= 1 ? raw : 1 + (raw - 1) * GROWTH;
+  const eased = raw <= 1 ? raw : 1 + (raw - 1) * GROWTH; // 작아질 때는 그대로, 커질 때는 절반만
   return Phaser.Math.Clamp(eased, MIN_SCALE, MAX_SCALE);
 }
 
@@ -36,10 +36,10 @@ export const TYPE = {
  */
 export function sizeButton(button: Phaser.GameObjects.Text, w: number, h: number): Phaser.GameObjects.Text {
   const s = uiScale(button.scene);
-  button.setPadding(0, 0, 0, 0).setFixedSize(0, 0);
-  const py = Math.max(0, Math.round((h * s - button.height) / 2));
+  button.setPadding(0, 0, 0, 0).setFixedSize(0, 0); // 먼저 글자만의 크기를 잰다
+  const py = Math.max(0, Math.round((h * s - button.height) / 2)); // 남는 높이를 위아래로 나눈다
   button.setPadding(0, py, 0, py);
-  button.setFixedSize(Math.max(Math.round(w * s), Math.ceil(button.width + 12 * s)), 0);
+  button.setFixedSize(Math.max(Math.round(w * s), Math.ceil(button.width + 12 * s)), 0); // 글자가 폭보다 길면 넓힌다 (높이 0 = 자동)
   return button;
 }
 
@@ -52,16 +52,16 @@ export function px(scene: Phaser.Scene, n: number): number {
 // 색은 버튼마다 적지 않고 역할(배경·표면·테두리·강조)로 여기 모은다. 스킨은 이 묶음을 바꿔 끼우는 것이다.
 // accent가 null이면 강조색이 지금 고른 파티마의 색을 따른다(일러스트 카드 테두리와 같은 색).
 export interface Skin {
-  id: string;
-  name: string;
-  bg: string;
-  surface: number;
-  surfaceHover: number;
-  border: number;
-  text: string;
-  textDim: string;
-  onAccent: string;
-  accent: number | null;
+  id: string; // 저장용 이름
+  name: string; // 화면에 보이는 이름
+  bg: string; // 화면 배경
+  surface: number; // 일반 버튼 바탕
+  surfaceHover: number; // 마우스를 올렸을 때 바탕
+  border: number; // 버튼 테두리
+  text: string; // 기본 글자색
+  textDim: string; // 흐린 글자색 (설명, 고르지 않은 칸)
+  onAccent: string; // 강조색 위에 쓰는 글자색 (어두워야 읽힌다)
+  accent: number | null; // 강조색. null이면 고른 파티마의 색
 }
 
 export const SKINS: readonly Skin[] = [
@@ -71,7 +71,7 @@ export const SKINS: readonly Skin[] = [
 ];
 
 const SKIN_KEY = 'arena.skin';
-let currentSkin: Skin = SKINS[0]!;
+let currentSkin: Skin = SKINS[0]!; // 모듈을 불러올 때 저장된 스킨을 한 번 읽는다
 try {
   const saved = localStorage.getItem(SKIN_KEY);
   currentSkin = SKINS.find((k) => k.id === saved) ?? currentSkin;
@@ -84,7 +84,7 @@ export function skin(): Skin {
 }
 
 export function cycleSkin(): Skin {
-  currentSkin = SKINS[(SKINS.indexOf(currentSkin) + 1) % SKINS.length]!;
+  currentSkin = SKINS[(SKINS.indexOf(currentSkin) + 1) % SKINS.length]!; // 마지막 다음은 처음
   try {
     localStorage.setItem(SKIN_KEY, currentSkin.id);
   } catch {
@@ -102,8 +102,9 @@ export function applySkinBackground(scene: Phaser.Scene): void {
   scene.cameras.main.setBackgroundColor(currentSkin.bg);
 }
 
-const hex = (c: number): string => '#' + c.toString(16).padStart(6, '0');
+const hex = (c: number): string => '#' + c.toString(16).padStart(6, '0'); // 0xff8800 → '#ff8800'
 
+// 두 색을 t 비율로 섞는다 (0이면 a, 1이면 b). 채널(R·G·B)마다 따로 섞는다
 function mix(a: number, b: number, t: number): number {
   const ch = (c: number, sh: number) => (c >> sh) & 0xff;
   const m = (sh: number) => Math.round(ch(a, sh) * (1 - t) + ch(b, sh) * t) << sh;
@@ -126,7 +127,7 @@ interface ButtonLook {
   key: string;
 }
 
-const LOOK = 'look';
+const LOOK = 'look'; // 버튼 객체에 모양 정보를 붙여 두는 데이터 키
 
 function paintButton(btn: Phaser.GameObjects.Text): void {
   const look = btn.getData(LOOK) as ButtonLook | undefined;
@@ -134,12 +135,13 @@ function paintButton(btn: Phaser.GameObjects.Text): void {
   const k = currentSkin;
   const w = btn.displayWidth;
   const h = btn.displayHeight;
+  // 모양을 정하는 값이 바뀌었을 때만 다시 그린다 (매 프레임 부르지만 대개 여기서 끝난다)
   const key = [look.variant, look.accent, look.hover, w, h, k.id].join('|');
   if (key !== look.key) {
     look.key = key;
     const g = look.bg;
     g.clear();
-    const r = Math.min(10 * uiScale(btn.scene), h / 2);
+    const r = Math.min(10 * uiScale(btn.scene), h / 2); // 모서리 반지름 (버튼 높이의 절반을 넘지 않게)
     let fill = k.surface;
     let fillAlpha = 1;
     let stroke = k.border;
@@ -171,11 +173,12 @@ function paintButton(btn: Phaser.GameObjects.Text): void {
         break;
     }
     g.fillStyle(fill, fillAlpha);
-    g.fillRoundedRect(-w / 2, -h / 2, w, h, r);
+    g.fillRoundedRect(-w / 2, -h / 2, w, h, r); // 버튼 중심이 원점: 글자의 origin이 0.5라서
     g.lineStyle(strokeW * Math.max(1, uiScale(btn.scene)), stroke, 1);
     g.strokeRoundedRect(-w / 2, -h / 2, w, h, r);
     btn.setColor(color);
   }
+  // 배경 도형이 글자를 따라다니게 한다. 깊이는 글자 바로 아래
   look.bg
     .setPosition(btn.x, btn.y)
     .setVisible(btn.visible)
@@ -219,8 +222,9 @@ export function makeButton(
   const look: ButtonLook = { variant, accent: currentSkin.accent ?? 0x4cc9f0, hover: false, bg, key: '' };
   text.setData(LOOK, look);
   const sync = (): void => paintButton(text);
-  scene.events.on('postupdate', sync);
+  scene.events.on('postupdate', sync); // 장면의 update가 끝난 뒤 매 프레임
   text.once('destroy', () => {
+    // 버튼이 없어지면 배경과 구독도 같이 치운다
     scene.events.off('postupdate', sync);
     bg.destroy();
   });
@@ -228,7 +232,7 @@ export function makeButton(
     look.hover = true;
     paintButton(text);
   });
-  text.on('pointerdown', () => text.setAlpha(0.7));
+  text.on('pointerdown', () => text.setAlpha(0.7)); // 누르는 동안 살짝 흐리게
   text.on('pointerup', () => {
     text.setAlpha(1);
     onTap();
@@ -250,7 +254,7 @@ export function padButton(button: Phaser.GameObjects.Text, x: number, y: number)
 export function makeLabel(scene: Phaser.Scene, x: number, y: number, label: string, size = 22): Phaser.GameObjects.Text {
   return scene.add
     .text(x, y, label, { fontFamily: FONT, fontSize: `${px(scene, size)}px`, color: '#c9d1e3', align: 'center' })
-    .setOrigin(0.5);
+    .setOrigin(0.5); // (x, y)가 글자의 가운데
 }
 
 /** 기준 크기의 글자 스타일 (makeLabel을 쓰지 않는 텍스트용) */

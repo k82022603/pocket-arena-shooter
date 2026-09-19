@@ -13,9 +13,9 @@ import type { Difficulty } from '../sim/difficulty';
 // 메모리를 묶어 두려고 표본 수를 제한한다. 넘치면 오래된 것부터 버리되 맨 앞 일부는 남긴다.
 // 경기 초반(연결 직후)이 대개 가장 중요하기 때문이다.
 
-export const SAMPLE_INTERVAL_TICKS = 30;
-const MAX_SAMPLES = 600;
-const KEEP_HEAD = 60;
+export const SAMPLE_INTERVAL_TICKS = 30; // 30틱 = 0.5초마다 한 표본
+const MAX_SAMPLES = 600; // 최대 5분 분량
+const KEEP_HEAD = 60; // 넘쳐도 버리지 않는 앞부분 (처음 30초)
 
 export interface RecordSample {
   t: number;
@@ -86,12 +86,14 @@ export class MatchRecorder {
     this.event(0, 'start', header.role + ' / ' + header.mode + ' / ' + header.chose.character);
   }
 
+  // 드문 사건(시작·다운·부활·끝) 한 줄. 200개가 넘으면 더 적지 않는다
   event(tick: number, kind: string, detail?: string): void {
     if (this.events.length < 200) this.events.push({ t: tick, kind, detail });
   }
 
   /** 시뮬레이션 사건을 받는다. step에 넣을 싱크로 그대로 쓴다. */
   readonly onSimEvent = (e: SimEvent): void => {
+    // 이번 구간 바구니에 더한다. 매 사건을 따로 적지 않고 0.5초 단위로 합쳐 파일을 작게 한다
     const add = (m: Record<string, number>, key: string, n: number): void => {
       m[key] = (m[key] ?? 0) + n;
     };
@@ -102,7 +104,7 @@ export class MatchRecorder {
     else if (e.kind === 'revive') this.event(this.lastTick, 'revive', 'P' + e.target);
   };
 
-  private lastTick = 0;
+  private lastTick = 0; // 마지막 표본의 틱 (사건에 붙일 시각)
 
   private static emptyBucket() {
     return {
@@ -113,10 +115,12 @@ export class MatchRecorder {
     };
   }
 
+  // 비어 있는 항목은 파일에 싣지 않는다 (undefined는 JSON에서 빠진다)
   private static pick(m: Record<string, number>): Record<string, number> | undefined {
     return Object.keys(m).length > 0 ? m : undefined;
   }
 
+  // 표본 하나를 적고, 그동안 모은 피해 바구니를 표본에 붙인 뒤 비운다
   sample(s: RecordSample): void {
     this.lastTick = s.t;
     const b = this.bucket;
@@ -163,12 +167,13 @@ export class MatchRecorder {
 /** 기록을 파일로 내려받는다. 브라우저에서만 쓴다. */
 export function downloadRecord(record: MatchRecord, name: string): void {
   const blob = new Blob([JSON.stringify(record, null, 1)], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
+  const url = URL.createObjectURL(blob); // 메모리 속 파일을 가리키는 임시 주소
+  // 보이지 않는 링크를 만들어 누른 것처럼 해서 내려받게 한다
   const a = document.createElement('a');
   a.href = url;
   a.download = name;
   document.body.appendChild(a);
   a.click();
   a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  setTimeout(() => URL.revokeObjectURL(url), 1000); // 내려받기가 시작된 뒤 임시 주소를 풀어 메모리를 돌려준다
 }

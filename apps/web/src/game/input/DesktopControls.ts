@@ -104,27 +104,29 @@ export class DesktopControls {
 
   // originX/Y: 조준 기준이 되는 내 캐릭터의 화면 좌표
   read(originX: number, originY: number): DesktopFrame | null {
-    if (!this.active) return null;
+    if (!this.active) return null; // 키보드·마우스를 아직 안 썼으면 터치 스틱에 맡긴다
+    // 오른쪽 - 왼쪽: 둘 다 누르면 0
     let moveX = (this.is('KeyD', 'ArrowRight') ? 1 : 0) - (this.is('KeyA', 'ArrowLeft') ? 1 : 0);
     let moveY = (this.is('KeyS', 'ArrowDown') ? 1 : 0) - (this.is('KeyW', 'ArrowUp') ? 1 : 0);
     const len = Math.hypot(moveX, moveY);
     if (len > 1) {
+      // 대각선이 더 빠르지 않게 길이를 1로
       moveX /= len;
       moveY /= len;
     }
     const pointer = this.scene.input.activePointer;
-    const dx = pointer.x - originX;
+    const dx = pointer.x - originX; // 조준 = 내 캐릭터에서 마우스 커서로 향하는 방향
     const dy = pointer.y - originY;
     const dist = Math.hypot(dx, dy) || 1;
     const dash = this.took('ShiftLeft', 'ShiftRight', 'Space');
     const swapTo = this.took('Digit1') ? 1 : this.took('Digit2') ? 2 : this.took('Digit3') ? 3 : 0;
-    this.pressed.clear();
+    this.pressed.clear(); // 한 번 읽은 '새로 눌림'은 비운다 (한 번 누르면 한 번만 반응)
     return {
       moveX,
       moveY,
       aimX: dx / dist,
       aimY: dy / dist,
-      fire: pointer.leftButtonDown() && !pointer.wasTouch,
+      fire: pointer.leftButtonDown() && !pointer.wasTouch, // 왼쪽 버튼을 누르고 있는 동안 연사
       dash,
       swapTo,
     };

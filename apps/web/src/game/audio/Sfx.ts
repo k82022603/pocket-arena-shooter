@@ -1,11 +1,12 @@
 // Web Audio로 합성하는 효과음. 에셋 파일 없이 동작하며, 첫 사용자 제스처에서 unlock 해야 iOS에서 소리가 난다.
 const MUTED_KEY = 'arena.muted';
 
+// 소리는 두 가지 재료로 만든다: 주파수가 미끄러지는 음(tone)과 걸러낸 잡음(noise).
 class SfxEngine {
-  private ctx: AudioContext | null = null;
-  private master: GainNode | null = null;
-  private noiseBuffer: AudioBuffer | null = null;
-  private lastPlayed = new Map<string, number>();
+  private ctx: AudioContext | null = null; // 첫 터치 전에는 만들 수 없다 (브라우저 자동 재생 정책)
+  private master: GainNode | null = null; // 전체 음량 (음소거는 이것을 0으로)
+  private noiseBuffer: AudioBuffer | null = null; // 1초짜리 흰 잡음. 폭발·발사음의 재료
+  private lastPlayed = new Map<string, number>(); // 소리 종류별 마지막 재생 시각 (연사 때 겹침 방지)
   private mutedFlag = false;
 
   constructor() {
@@ -30,9 +31,10 @@ class SfxEngine {
     if (this.master) this.master.gain.value = muted ? 0 : 0.5;
   }
 
+  // 첫 사용자 제스처(터치·클릭·키)에서 불러야 한다. 그 전에 만든 오디오는 iOS에서 소리가 나지 않는다
   unlock(): void {
     if (!this.ctx) {
-      const Ctor = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+      const Ctor = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext; // 옛 Safari는 접두사 이름
       if (!Ctor) return;
       this.ctx = new Ctor();
       this.master = this.ctx.createGain();
@@ -41,11 +43,12 @@ class SfxEngine {
       const seconds = 1;
       this.noiseBuffer = this.ctx.createBuffer(1, this.ctx.sampleRate * seconds, this.ctx.sampleRate);
       const data = this.noiseBuffer.getChannelData(0);
-      for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+      for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1; // -1..1 무작위 = 흰 잡음
     }
-    if (this.ctx.state === 'suspended') void this.ctx.resume();
+    if (this.ctx.state === 'suspended') void this.ctx.resume(); // 탭을 오간 뒤 멈춰 있으면 깨운다
   }
 
+  // 재생해도 되는가: 오디오가 준비됐고, 음소거가 아니고, 같은 소리를 너무 자주 내지 않았다
   private ready(key: string, minGapMs: number): boolean {
     if (!this.ctx || !this.master || this.mutedFlag) return false;
     const now = performance.now();
@@ -55,6 +58,7 @@ class SfxEngine {
     return true;
   }
 
+  // freq에서 freqEnd로 미끄러지며 사라지는 음. type은 파형(square 거칠게, sine 부드럽게, sawtooth 날카롭게)
   private tone(freq: number, freqEnd: number, duration: number, type: OscillatorType, gain: number, delay = 0): void {
     if (!this.ctx || !this.master) return;
     const t0 = this.ctx.currentTime + delay;
@@ -62,14 +66,15 @@ class SfxEngine {
     const g = this.ctx.createGain();
     osc.type = type;
     osc.frequency.setValueAtTime(freq, t0);
-    osc.frequency.exponentialRampToValueAtTime(Math.max(20, freqEnd), t0 + duration);
+    osc.frequency.exponentialRampToValueAtTime(Math.max(20, freqEnd), t0 + duration); // 지수 곡선은 0을 못 가므로 최소 20Hz
     g.gain.setValueAtTime(gain, t0);
-    g.gain.exponentialRampToValueAtTime(0.001, t0 + duration);
+    g.gain.exponentialRampToValueAtTime(0.001, t0 + duration); // 소리가 자연스럽게 잦아든다
     osc.connect(g).connect(this.master);
     osc.start(t0);
-    osc.stop(t0 + duration + 0.02);
+    osc.stop(t0 + duration + 0.02); // 멈춘 노드는 브라우저가 알아서 치운다
   }
 
+  // 잡음을 저역 통과 필터로 걸러 낸다. 필터가 닫혀 갈수록 '쉬익'에서 '쿵'으로 변한다
   private noise(duration: number, gain: number, filterFrom: number, filterTo: number, delay = 0): void {
     if (!this.ctx || !this.master || !this.noiseBuffer) return;
     const t0 = this.ctx.currentTime + delay;
@@ -87,6 +92,7 @@ class SfxEngine {
     src.stop(t0 + duration + 0.02);
   }
 
+  // 아래는 게임이 부르는 소리들. 괄호 안 숫자는 같은 소리 사이 최소 간격(ms)
   shot(): void {
     if (!this.ready('shot', 40)) return;
     this.tone(880, 220, 0.07, 'square', 0.12);
@@ -141,13 +147,13 @@ class SfxEngine {
   }
 
   pickup(): void {
-    if (!this.ready('pickup', 100)) return;
+    if (!this.ready('pickup', 100)) return; // 두 음을 이어 '띠링'
     this.tone(660, 660, 0.08, 'sine', 0.15);
     this.tone(990, 990, 0.12, 'sine', 0.15, 0.08);
   }
 
   revive(): void {
-    if (!this.ready('revive', 200)) return;
+    if (!this.ready('revive', 200)) return; // 올라가는 세 음
     this.tone(440, 440, 0.1, 'triangle', 0.15);
     this.tone(660, 660, 0.1, 'triangle', 0.15, 0.1);
     this.tone(880, 1320, 0.25, 'triangle', 0.15, 0.2);
@@ -178,4 +184,4 @@ class SfxEngine {
   }
 }
 
-export const sfx = new SfxEngine();
+export const sfx = new SfxEngine(); // 앱 전체가 하나를 같이 쓴다

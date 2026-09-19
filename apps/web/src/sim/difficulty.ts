@@ -6,8 +6,9 @@
 
 export type Difficulty = 'easy' | 'normal' | 'hard';
 
-export const DIFFICULTY_ORDER: readonly Difficulty[] = ['easy', 'normal', 'hard'];
+export const DIFFICULTY_ORDER: readonly Difficulty[] = ['easy', 'normal', 'hard']; // 타이틀 버튼 순서
 
+// 화면에 보이는 이름
 export const DIFFICULTY_LABEL: Record<Difficulty, string> = {
   easy: '하',
   normal: '중',
@@ -28,14 +29,14 @@ export interface BotSkill {
 }
 
 export const BOT_SKILL: Record<Difficulty, BotSkill> = {
-  easy: { aimError: 0.7, dodgeChance: 0.08, burstTicks: 24, restMin: 45, restSpread: 40, lead: 0 },
-  normal: { aimError: 0.36, dodgeChance: 0.35, burstTicks: 30, restMin: 30, restSpread: 30, lead: 0 },
-  hard: { aimError: 0.22, dodgeChance: 0.5, burstTicks: 36, restMin: 22, restSpread: 24, lead: 0.5 },
+  easy: { aimError: 0.7, dodgeChance: 0.08, burstTicks: 24, restMin: 45, restSpread: 40, lead: 0 }, // 많이 빗나가고 거의 안 피하며 오래 쉰다
+  normal: { aimError: 0.36, dodgeChance: 0.35, burstTicks: 30, restMin: 30, restSpread: 30, lead: 0 }, // 난이도를 넣기 전의 봇 그대로
+  hard: { aimError: 0.22, dodgeChance: 0.5, burstTicks: 36, restMin: 22, restSpread: 24, lead: 0.5 }, // 정확하고 절반은 피하며 앞질러 쏜다
 };
 
 /** 1인 방어의 적 수 배율. 편성은 2인 기준이다 */
 export const SOLO_ENEMY_SCALE: Record<Difficulty, number> = {
-  easy: 0.3,
-  normal: 0.45,
-  hard: 0.65,
+  easy: 0.3, // 10웨이브 합계 53기
+  normal: 0.45, // 77기
+  hard: 0.65, // 116기 (2인은 175기)
 };

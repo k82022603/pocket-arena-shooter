@@ -10,8 +10,8 @@ import { botInput, createBotMemory } from '../apps/web/src/sim/bot';
 import { BOT_SKILL, DIFFICULTY_LABEL, DIFFICULTY_ORDER, type Difficulty } from '../apps/web/src/sim/difficulty';
 import { COOP, EMPTY_INPUT, ENEMY_OWNER, type InputFrame, type SimState } from '../apps/web/src/sim/types';
 
-const SEEDS = [11, 22, 33, 44, 55, 66, 77, 88, 99, 111];
-const MAX_TICKS = 90_000;
+const SEEDS = [11, 22, 33, 44, 55, 66, 77, 88, 99, 111]; // 고정 시드: 돌릴 때마다 같은 결과
+const MAX_TICKS = 90_000; // 한 판 최대 25분 (끝나지 않는 판을 끊는다)
 
 // 적당히 잘하는 플레이어. 코어 근처를 지키고, 코어로 직행하는 강습병을 우선하고,
 // 다쳤을 때만 회복팩을 주우러 가고, 날아오는 탄을 대시로 피한다.
@@ -92,7 +92,7 @@ function autoInput(s: SimState, id: 0 | 1): InputFrame {
 }
 
 function play(character: CharacterId, playerCount: 1 | 2, seed: number, difficulty: Difficulty = 'normal') {
-  const s = createInitialState([character, character], { mode: 'coop', playerCount, seed, difficulty });
+  const s = createInitialState([character, character], { mode: 'coop', playerCount, seed, difficulty }); // 2인이면 같은 파티마 두 명
   setPlayerLoadout(s, 0, 0);
   setPlayerLoadout(s, 1, 0);
   let out = outcomeOf(s);
@@ -145,6 +145,7 @@ for (const { pc, d } of RUNS) {
 
 // 1:1 대전 봇. 기준 상대(중 난이도 봇)와 붙여 난이도별 승률을 본다.
 // 사람 대신 같은 봇을 기준으로 쓰므로 "상은 중보다 세고 하는 약한가"만 확인한다.
+// 1:1 한 판: 0번은 기준(중) 봇, 1번은 난이도 d 봇. 1번이 이기면 true
 function duel(d: Difficulty, seed: number, i: number): boolean | null {
   const a = CHARACTER_ORDER[i % CHARACTER_ORDER.length]!;
   const b = CHARACTER_ORDER[(i + 1) % CHARACTER_ORDER.length]!;

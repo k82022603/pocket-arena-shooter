@@ -6,17 +6,18 @@ import { SimulatedTransport, netSimFromUrl } from './simulated';
 import type { Channel, MessageHandler, Transport, Unsubscribe } from './transport';
 
 export type LinkState = 'connected' | 'reconnecting' | 'failed' | 'closed';
-export type FailReason = 'peer_left' | 'rejoin_failed';
+export type FailReason = 'peer_left' | 'rejoin_failed'; // 상대가 떠났다 | 내가 다시 붙지 못했다
 export type LinkEvent = 'reconnecting' | 'reconnected' | 'failed';
 
 // 이 시간 안에 복구하지 못하면 경기를 끝낸다. 서버 유예(15초)보다 짧아야 한다.
 export const RECONNECT_WINDOW_MS = 10_000;
 // 핸들러가 없는 동안 보관할 event 메시지 수 상한
 const PENDING_EVENT_LIMIT = 16;
-const NEGOTIATE_TIMEOUT_MS = 8_000;
+const NEGOTIATE_TIMEOUT_MS = 8_000; // 재접속 때의 P2P 협상 대기 (처음 연결보다 넉넉하게)
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
+// WebRTC를 먼저 시도하고, 시간 안에 안 붙으면 상대에게 알리고 릴레이로 내려간다
 export async function negotiateTransport(signaling: SignalingClient, role: PeerRole, timeoutMs: number): Promise<Transport> {
   const rtc = new WebRtcTransport(signaling, role);
   let transport: Transport;
@@ -26,13 +27,14 @@ export async function negotiateTransport(signaling: SignalingClient, role: PeerR
   } catch (err) {
     console.warn('[net] WebRTC 실패, 릴레이로 전환:', (err as Error).message);
     rtc.close();
-    signaling.send({ t: 'signal', data: { kind: 'use_relay' } });
+    signaling.send({ t: 'signal', data: { kind: 'use_relay' } }); // 상대도 같이 내려오게 한다
     transport = wrapNetSim(new RelayTransport(signaling));
     return transport;
   }
   return wrapNetSim(transport);
 }
 
+// URL에 ?lag=…&loss=… 가 있으면 지연·손실을 흉내 내는 포장을 씌운다 (테스트용)
 function wrapNetSim(transport: Transport): Transport {
   const sim = netSimFromUrl();
   return sim ? new SimulatedTransport(transport, sim) : transport;
@@ -41,7 +43,7 @@ function wrapNetSim(transport: Transport): Transport {
 // 시그널링·전송 계층을 묶어 끊김을 감지하고 재접속한다. 게임 코드는 전송이 바뀌어도 이 객체만 본다.
 export class SessionLink {
   state: LinkState = 'connected';
-  deadline = 0;
+  deadline = 0; // 재접속을 포기하는 시각 (performance.now 기준, 화면의 남은 초 표시용)
   failReason: FailReason | null = null;
 
   private transport: Transport | null = null;
@@ -53,15 +55,15 @@ export class SessionLink {
   private readonly listeners = new Map<LinkEvent, Set<(reason?: FailReason) => void>>();
   private transportUnsubs: Unsubscribe[] = [];
   private signalingUnsubs: Unsubscribe[] = [];
-  private rejoining = false;
-  private negotiating: Promise<void> | null = null;
-  private windowTimer: ReturnType<typeof setTimeout> | null = null;
+  private rejoining = false; // 내가 재접속을 시도하는 중인가
+  private negotiating: Promise<void> | null = null; // 진행 중인 협상 (중복 시작을 막는다)
+  private windowTimer: ReturnType<typeof setTimeout> | null = null; // 재접속 유예 타이머
   private closed = false;
 
   constructor(
     readonly role: PeerRole,
-    readonly code: string,
-    private readonly token: string,
+    readonly code: string, // 방 코드
+    private readonly token: string, // 재접속 토큰
     private signaling: SignalingClient,
     transport: Transport,
   ) {
@@ -82,19 +84,21 @@ export class SessionLink {
   }
 
   send(channel: Channel, data: Uint8Array): void {
-    if (this.state === 'connected') this.transport?.send(channel, data);
+    if (this.state === 'connected') this.transport?.send(channel, data); // 재접속 중에는 보내지 않는다
   }
 
+  // 처리기를 붙인다. 처음 붙는 처리기에는 그동안 보관한 event 메시지를 먼저 넘긴다
   onMessage(handler: MessageHandler): Unsubscribe {
     const first = this.handlers.size === 0;
     this.handlers.add(handler);
     if (first && this.pending.length > 0) {
-      const queued = this.pending.splice(0, this.pending.length);
+      const queued = this.pending.splice(0, this.pending.length); // 꺼내면서 비운다
       for (const m of queued) handler(m.channel, m.data);
     }
     return () => this.handlers.delete(handler);
   }
 
+  // 연결 상태 사건(재접속 중·복구·실패)을 구독한다
   on(event: LinkEvent, fn: (reason?: FailReason) => void): Unsubscribe {
     let set = this.listeners.get(event);
     if (!set) {
@@ -112,13 +116,14 @@ export class SessionLink {
     if (this.windowTimer) clearTimeout(this.windowTimer);
     this.detachTransport();
     for (const off of this.signalingUnsubs) off();
-    this.signaling.close();
+    this.signaling.close(); // 서버가 방을 정리하고 상대에게 peer_left를 보낸다
   }
 
   private emit(event: LinkEvent, reason?: FailReason): void {
     for (const fn of this.listeners.get(event) ?? []) fn(reason);
   }
 
+  // 새 전송로를 붙인다. 이전 것은 떼고 닫는다
   private attachTransport(transport: Transport): void {
     this.detachTransport();
     this.transport = transport;
@@ -127,7 +132,7 @@ export class SessionLink {
         if (this.handlers.size === 0) {
           // 지연 도착한 입력·스냅샷은 버려도 되지만 event는 보관한다
           if (channel === 'event' && this.pending.length < PENDING_EVENT_LIMIT) {
-            this.pending.push({ channel, data: data.slice() });
+            this.pending.push({ channel, data: data.slice() }); // 수신 버퍼가 재사용될 수 있어 복사해 둔다
           }
           return;
         }
@@ -145,12 +150,13 @@ export class SessionLink {
     old?.close();
   }
 
+  // 시그널링 서버가 보내는 상대 상태 알림을 듣는다
   private attachSignaling(): void {
     for (const off of this.signalingUnsubs) off();
     const offMessage = this.signaling.onMessage((msg) => {
       if (this.closed) return;
       switch (msg.t) {
-        case 'peer_disconnected':
+        case 'peer_disconnected': // 상대 소켓이 끊겼다: 유예 시간을 시작하고 기다린다
           this.startWindow();
           return;
         // 상대가 같은 페이지로 돌아오면 peer_rejoined, 새 페이지로 다시 참가하면 peer_joined가 온다.
@@ -158,7 +164,7 @@ export class SessionLink {
         case 'peer_joined':
           void this.negotiate();
           return;
-        case 'peer_left':
+        case 'peer_left': // 상대가 나갔거나 유예가 끝났다
           this.fail('peer_left');
           return;
         case 'signal':
@@ -168,14 +174,14 @@ export class SessionLink {
     });
     const signaling = this.signaling;
     signaling.onClose(() => {
-      if (this.closed || signaling !== this.signaling) return;
-      void this.rejoin();
+      if (this.closed || signaling !== this.signaling) return; // 이미 새 소켓으로 바꿨으면 무시
+      void this.rejoin(); // 내 시그널링이 끊겼다: 내가 다시 붙어야 한다
     });
     this.signalingUnsubs = [offMessage];
   }
 
   private handleTransportClosed(transport: Transport): void {
-    if (this.closed || transport !== this.transport) return;
+    if (this.closed || transport !== this.transport) return; // 이미 교체된 옛 전송로의 닫힘은 무시
     for (const off of this.transportUnsubs) off();
     this.transportUnsubs = [];
     this.transport = null;
@@ -184,8 +190,9 @@ export class SessionLink {
     else void this.rejoin();
   }
 
+  // 재접속 유예를 시작한다. 이 시간 안에 복구되지 않으면 실패
   private startWindow(): void {
-    if (this.state !== 'connected' || this.closed) return;
+    if (this.state !== 'connected' || this.closed) return; // 이미 유예 중이면 다시 시작하지 않는다
     this.state = 'reconnecting';
     this.deadline = performance.now() + RECONNECT_WINDOW_MS;
     this.emit('reconnecting');
@@ -202,6 +209,7 @@ export class SessionLink {
     else this.transport?.close();
   }
 
+  // 시그널링에 다시 붙어 토큰으로 방에 재입장하고 전송로를 다시 협상한다. 유예 안에서 반복 시도
   private async rejoin(): Promise<void> {
     if (this.closed || this.rejoining) return;
     this.rejoining = true;
@@ -210,6 +218,7 @@ export class SessionLink {
       while (this.state === 'reconnecting' && !this.closed) {
         try {
           if (!this.signaling.isOpen) {
+            // 소켓이 죽었으면 새로 연다
             this.signaling.close();
             this.signaling = new SignalingClient();
             this.attachSignaling();
@@ -220,8 +229,8 @@ export class SessionLink {
           return;
         } catch (err) {
           const message = (err as Error).message;
-          if (message === 'room_not_found' || message === 'bad_token') break;
-          await sleep(700);
+          if (message === 'room_not_found' || message === 'bad_token') break; // 방이 없어졌으면 더 해도 소용없다
+          await sleep(700); // 잠깐 쉬고 다시
         }
       }
     } finally {
@@ -230,16 +239,18 @@ export class SessionLink {
     if (this.state === 'reconnecting') this.fail('rejoin_failed');
   }
 
+  // 전송로를 새로 협상한다. 동시에 여러 번 불려도 한 번만 진행한다
   private negotiate(): Promise<void> {
     if (this.closed || this.state === 'failed') return Promise.resolve();
     if (this.negotiating) return this.negotiating;
     this.negotiating = (async () => {
       const transport = await negotiateTransport(this.signaling, this.role, NEGOTIATE_TIMEOUT_MS);
       if (this.closed) {
-        transport.close();
+        transport.close(); // 협상하는 사이에 세션이 닫혔다
         return;
       }
       this.attachTransport(transport);
+      // 복구 완료: 유예를 풀고 알린다
       if (this.windowTimer) clearTimeout(this.windowTimer);
       this.windowTimer = null;
       this.deadline = 0;
@@ -263,7 +274,7 @@ export class SessionLink {
   }
 
   private fail(reason: FailReason): void {
-    if (this.closed || this.state === 'failed') return;
+    if (this.closed || this.state === 'failed') return; // 실패는 한 번만 알린다
     this.state = 'failed';
     this.failReason = reason;
     if (this.windowTimer) clearTimeout(this.windowTimer);

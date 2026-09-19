@@ -6,8 +6,8 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 
-const MANUAL = 'docs/개발자_매뉴얼.md';
-const ROOTS = ['apps', 'packages', 'scripts'];
+const MANUAL = 'docs/개발자_매뉴얼.md'; // 파일 지도와 검사 목록이 적힌 문서
+const ROOTS = ['apps', 'packages', 'scripts']; // 소스를 찾을 폴더
 const EXTS = ['.ts', '.mts', '.mjs'];
 
 let failures = 0;
@@ -17,6 +17,7 @@ const fail = (msg) => {
 };
 const pass = (msg) => console.log('PASS  ' + msg);
 
+// 폴더를 끝까지 내려가며 소스 파일 경로를 모은다
 function walk(dir, out) {
   for (const entry of readdirSync(dir)) {
     if (entry === 'node_modules' || entry === 'dist') continue;
@@ -29,7 +30,7 @@ function walk(dir, out) {
 
 const sources = ROOTS.flatMap((r) => walk(r, []));
 const manual = readFileSync(MANUAL, 'utf8');
-const lineCount = (p) => readFileSync(p, 'utf8').split('\n').length - 1;
+const lineCount = (p) => readFileSync(p, 'utf8').split('\n').length - 1; // 마지막 줄바꿈 뒤 빈 줄은 세지 않는다
 
 // 1. 파일 지도의 "이름 (N)" 표기를 실제 줄 수와 대조
 const seen = new Set();
@@ -39,7 +40,7 @@ for (const m of manual.matchAll(/([\w./-]+\.(?:ts|mts|mjs))\s*\(\s*(\d+)\)/g)) {
   const name = m[1];
   if (seen.has(name)) continue;
   const hits = sources.filter((p) => p === name || p.endsWith('/' + name));
-  if (hits.length !== 1) continue;
+  if (hits.length !== 1) continue; // 이름이 겹치는 파일은 어느 것인지 몰라 건너뛴다
   seen.add(name);
   const claimed = Number(m[2]);
   const actual = lineCount(hits[0]);
@@ -56,6 +57,7 @@ const out = execFileSync('npx', ['tsx', 'scripts/sim-check.ts'], {
   encoding: 'utf8',
   shell: process.platform === 'win32',
 });
+// 'PASS  이름  (참고 값)'에서 이름만 남긴다 (참고 값은 실행마다 달라질 수 있다)
 const clean = (l) => l.replace(/^PASS\s+/, '').replace(/\s+\(.*$/, '').replace(/\s+←.*$/, '').trim();
 const actualNames = out.split('\n').filter((l) => l.startsWith('PASS')).map(clean);
 const docNames = manual.split('\n').filter((l) => l.startsWith('PASS')).map(clean);
