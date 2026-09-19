@@ -1,9 +1,10 @@
 // 화면 없이(헤드리스) 시뮬레이션 코어만 돌려 규칙을 확인한다: npm run check:sim
-import { createInitialState, setPlayerLoadout, step } from '../apps/web/src/sim/core';
+import { createInitialState, outcomeOf, setPlayerLoadout, step } from '../apps/web/src/sim/core';
 import { botInput, createBotMemory } from '../apps/web/src/sim/bot';
-import { EMPTY_INPUT, type InputFrame } from '../apps/web/src/sim/types';
+import { COOP, EMPTY_INPUT, ENEMY_OWNER, type InputFrame } from '../apps/web/src/sim/types';
 import { decodeCharacter, decodeInput, decodeSnapshot, encodeCharacter, encodeInput, encodeSnapshot } from '../apps/web/src/sim/serialize';
 import { PositionHistory } from '../apps/web/src/sim/history';
+import { CHARACTERS } from '../apps/web/src/sim/characters';
 import { GuestSync } from '../apps/web/src/game/sync/GuestSync';
 import type { SyncLink } from '../apps/web/src/game/sync/GameSync';
 
@@ -89,6 +90,104 @@ const b = createInitialState(['lachesis', 'clotho'], { mode: 'duel', playerCount
 const mem = createBotMemory();
 while (b.elapsed < 1800 && b.players[0].hp > 0) step(b, [EMPTY_INPUT, botInput(b, 1, mem)]);
 check('봇이 가만히 선 상대를 이김', b.players[0].hp === 0 && b.elapsed > 180, `${(b.elapsed / 60).toFixed(1)}s, bot hp ${b.players[1].hp}`);
+
+// 협동 모드 규칙
+{
+  const mk = (playerCount: 1 | 2 = 2) =>
+    createInitialState(['lachesis', 'clotho'], { mode: 'coop', playerCount, seed: 3 });
+
+  // 적 유탄이 코어를 깎는다 (플레이어를 비켜간 포수 탄이 코어에 들어간다)
+  const core = mk();
+  core.players[0].x = 60;
+  core.players[0].y = 60;
+  core.players[1].x = 60;
+  core.players[1].y = 660;
+  const coreBefore = core.coop!.coreHp;
+  core.bullets.push({
+    id: 1, owner: ENEMY_OWNER, kind: 0, spawnTick: 0, lagTicks: 0,
+    x: COOP.coreX, y: COOP.coreY, vx: 0, vy: 0,
+    damage: COOP.enemyBulletDamage, ttl: 60, hits: [],
+  });
+  step(core, [EMPTY_INPUT, EMPTY_INPUT]);
+  check(
+    '적 유탄이 코어를 깎는다',
+    core.coop!.coreHp === coreBefore - COOP.enemyBulletDamage,
+    '코어 ' + coreBefore + ' to ' + core.coop!.coreHp,
+  );
+
+  // 웨이브는 적을 전부 잡아야 넘어간다
+  const gate = mk();
+  gate.players[0].hp = 500;
+  gate.players[1].hp = 500;
+  gate.coop!.wave = 1;
+  gate.coop!.phase = 2;
+  gate.coop!.enemies.push({ id: 1, kind: 0, x: 200, y: 200, hp: 30, fireCooldown: 0, contactCooldown: 0 });
+  for (let i = 0; i < 300; i++) step(gate, [EMPTY_INPUT, EMPTY_INPUT]);
+  check(
+    '적이 남으면 다음 웨이브로 넘어가지 않는다',
+    gate.coop!.wave === 1 && gate.coop!.phase === 2,
+    'wave ' + gate.coop!.wave + ' phase ' + gate.coop!.phase,
+  );
+
+  // 10웨이브를 전부 소탕하면 승리 (적을 즉시 처치하며 진행)
+  const win = mk();
+  win.players[0].hp = 9999;
+  win.players[1].hp = 9999;
+  let won: ReturnType<typeof outcomeOf> = null;
+  let ticks = 0;
+  while (won === null && ticks < 60_000) {
+    step(win, [EMPTY_INPUT, EMPTY_INPUT]);
+    for (const e of win.coop!.enemies) e.hp = 0;
+    won = outcomeOf(win);
+    ticks += 1;
+  }
+  check(
+    '10웨이브 전부 소탕하면 승리',
+    won !== null && won.mode === 'coop' && won.won === true && won.wave === 10,
+    (ticks / 60).toFixed(0) + '초, 코어 ' + win.coop!.coreHp,
+  );
+
+  // 패배 조건 두 가지
+  const dead = mk();
+  dead.coop!.coreHp = 0;
+  const byCore = outcomeOf(dead);
+  const wiped = mk();
+  wiped.players[0].hp = 0;
+  wiped.players[1].hp = 0;
+  const byWipe = outcomeOf(wiped);
+  check(
+    '코어 파괴 또는 전원 다운이면 패배',
+    byCore?.mode === 'coop' && byCore.won === false && byWipe?.mode === 'coop' && byWipe.won === false,
+  );
+
+  // 혼자 하기에서는 부활이 없어 다운이 곧 패배
+  const solo = mk(1);
+  solo.players[0].hp = 0;
+  const soloOut = outcomeOf(solo);
+  check('혼자 하기는 다운이 곧 패배', soloOut?.mode === 'coop' && soloOut.won === false);
+
+  // 다운된 아군 곁에서 2초 머물면 최대 HP 절반으로 부활
+  const rev = mk();
+  rev.players[0].hp = 0;
+  rev.players[1].x = rev.players[0].x + 30;
+  rev.players[1].y = rev.players[0].y;
+  for (let i = 0; i < COOP.reviveTicks + 2; i++) step(rev, [EMPTY_INPUT, EMPTY_INPUT]);
+  const half = Math.floor(CHARACTERS.lachesis.stats.maxHp * COOP.reviveHpRatio);
+  check('다운된 아군 곁 2초면 절반 HP로 부활', rev.players[0].hp === half, 'hp ' + rev.players[0].hp);
+
+  // 곁을 떠나면 진행도가 두 배로 줄어든다
+  const decay = mk();
+  decay.players[0].hp = 0;
+  decay.players[1].x = decay.players[0].x + 30;
+  decay.players[1].y = decay.players[0].y;
+  for (let i = 0; i < 60; i++) step(decay, [EMPTY_INPUT, EMPTY_INPUT]);
+  const near = decay.players[0].reviveProgress;
+  decay.players[1].x = decay.players[0].x + 400;
+  for (let i = 0; i < 10; i++) step(decay, [EMPTY_INPUT, EMPTY_INPUT]);
+  const far = decay.players[0].reviveProgress;
+  check('부활 진행도는 이탈하면 2배로 감소', near === 60 && far === 40, near + ' to ' + far);
+}
+
 
 // 적 대상 되감기 판정: 게스트가 본 시점의 적 위치로 판정한다
 {
