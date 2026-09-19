@@ -80,6 +80,7 @@ const DOCS = [
   'docs/테스트_방식과_헤드리스.md',
   'docs/회고.md',
   'docs/프로그램_명세서.md',
+  'docs/아키텍처_정의서.md',
 ];
 let countFailures = 0;
 for (const file of DOCS) {
