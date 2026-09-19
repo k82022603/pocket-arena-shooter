@@ -189,6 +189,34 @@ check('봇이 가만히 선 상대를 이김', b.players[0].hp === 0 && b.elapse
   for (let i = 0; i < 10; i++) step(decay, [EMPTY_INPUT, EMPTY_INPUT]);
   const far = decay.players[0].reviveProgress;
   check('부활 진행도는 이탈하면 2배로 감소', near === 60 && far === 40, near + ' to ' + far);
+  // 아군 사격은 피해를 주지 않는다 (무기 6종 전부, 바로 옆에서 10초)
+  {
+    let worst = 0;
+    let dealt = 0;
+    let coreLoss = 0;
+    for (const weapon of [0, 1, 2, 3, 4, 5] as const) {
+      const ff = createInitialState(['lachesis', 'atropos'], { mode: 'coop', playerCount: 2, seed: 9 });
+      ff.coop!.timer = 100_000;
+      ff.coop!.enemies = [];
+      ff.players[0].x = 400;
+      ff.players[0].y = 360;
+      ff.players[1].x = 460;
+      ff.players[1].y = 360;
+      setPlayerLoadout(ff, 0, weapon);
+      const fire = { ...EMPTY_INPUT, aimX: 1, aimY: 0, fire: true };
+      for (let i = 0; i < 600; i++) step(ff, [fire, EMPTY_INPUT]);
+      worst = Math.max(worst, CHARACTERS.atropos.stats.maxHp - ff.players[1].hp);
+      dealt = Math.max(dealt, ff.stats[0].damageDealt);
+      coreLoss = Math.max(coreLoss, COOP.coreMaxHp - ff.coop!.coreHp);
+    }
+    check(
+      '아군과 코어는 내 탄에 맞지 않는다',
+      worst === 0 && dealt === 0 && coreLoss === 0,
+      '무기 6종 각 10초 근접 사격, 아군 피해 ' + worst + ' 코어 피해 ' + coreLoss,
+    );
+  }
+
+
   // 1인 방어는 2인보다 적 편성이 적고 픽업이 더 자주 나온다 (밸런스 조정)
   const totalFor = (pc: 1 | 2) => {
     let n = 0;
