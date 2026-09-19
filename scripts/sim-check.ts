@@ -15,6 +15,7 @@ import { SIM } from '../apps/web/src/sim/types';
 import type { Channel, MessageHandler, Transport, Unsubscribe } from '../apps/web/src/net/transport';
 import { waveComposition } from '../apps/web/src/sim/coop';
 import { PICKUP } from '../apps/web/src/sim/weapons';
+import { BOT_SKILL, DIFFICULTY_ORDER, type Difficulty } from '../apps/web/src/sim/difficulty';
 import { GuestSync } from '../apps/web/src/game/sync/GuestSync';
 import type { SyncLink } from '../apps/web/src/game/sync/GameSync';
 
@@ -621,6 +622,53 @@ check('봇이 가만히 선 상대를 이김', b.players[0].hp === 0 && b.elapse
   const shown = guest.renderState(640).players[1];
   const offset = Math.abs(shown.x - drift.players[1].x);
   check('스무딩 중에는 화면만 어긋난다', offset > 1 && offset < 20, '화면 오프셋 ' + offset.toFixed(1) + 'px');
+}
+
+// 혼자 하기 난이도: 방어전은 적의 수, 대전은 봇의 솜씨가 바뀐다. 둘이 하는 경기는 영향이 없다.
+{
+  const count = (pc: 1 | 2, d: Difficulty) =>
+    Array.from({ length: COOP.waves }, (_, i) => waveComposition(i + 1, pc, d).length).reduce((a, b) => a + b, 0);
+  const [easy, normal, hard] = DIFFICULTY_ORDER.map((d) => count(1, d));
+  const duo = DIFFICULTY_ORDER.map((d) => count(2, d));
+  check(
+    '난이도별 1인 방어 적 수: 하 < 중 < 상, 2인은 그대로',
+    easy! < normal! && normal! < hard! && duo.every((n) => n === duo[0]),
+    `1인 ${easy}/${normal}/${hard}기, 2인 ${duo[0]}기`,
+  );
+
+  // 새 경기에 난이도가 실리고, 실제로 첫 웨이브 물량이 달라진다
+  const firstWave = (d: Difficulty) => {
+    const st = createInitialState(['lachesis', 'lachesis'], { mode: 'coop', playerCount: 1, seed: 3, difficulty: d });
+    while (st.coop!.wave === 0) step(st, [EMPTY_INPUT, EMPTY_INPUT]);
+    return st.coop!.spawnQueue.length + st.coop!.enemies.length;
+  };
+  const plain = createInitialState(['lachesis', 'lachesis'], { mode: 'coop', playerCount: 1, seed: 3 });
+  const snapDiff = decodeSnapshot(encodeSnapshot(plain, 0))?.state.difficulty;
+  check(
+    '난이도는 경기 상태에 실리고 기본값은 중',
+    plain.difficulty === 'normal' && snapDiff === 'normal' && firstWave('easy') < firstWave('hard'),
+    `첫 웨이브 하 ${firstWave('easy')}기 / 상 ${firstWave('hard')}기`,
+  );
+
+  // 봇끼리 붙여 본다. 기준은 중 봇이고, 상은 하보다 확실히 더 이겨야 한다.
+  const botWins = (d: Difficulty): number => {
+    let wins = 0;
+    for (let g = 0; g < 8; g++) {
+      const st = createInitialState(['lachesis', 'clotho'], { mode: 'duel', playerCount: 2, seed: 100 + g });
+      const ref = createBotMemory();
+      const foe = createBotMemory();
+      let out = outcomeOf(st);
+      for (let t = 0; out === null && t < 36_000; t++) {
+        step(st, [botInput(st, 0, ref, BOT_SKILL.normal), botInput(st, 1, foe, BOT_SKILL[d])]);
+        out = outcomeOf(st);
+      }
+      if (out?.mode === 'duel' && out.winner === 1) wins += 1;
+    }
+    return wins;
+  };
+  const weak = botWins('easy');
+  const strong = botWins('hard');
+  check('대전 봇 난이도: 상이 하보다 자주 이긴다', strong > weak + 2, `중 봇 상대 8판 중 하 ${weak}승 / 상 ${strong}승`);
 }
 
 console.log(failures === 0 ? '\n모든 검사 통과' : `\n${failures}개 실패`);

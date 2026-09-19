@@ -1,6 +1,7 @@
 import type { CharacterId } from '../sim/characters';
 import type { EnemyKind, GameMode } from '../sim/types';
 import type { DamageSource, SimEvent } from '../sim/events';
+import type { Difficulty } from '../sim/difficulty';
 
 // 경기 중 무엇이 일어났는지 기록한다. 화면을 캡처해 주고받는 대신 파일 하나로 상황을 넘기기 위한 것이다.
 //
@@ -59,6 +60,8 @@ export interface MatchRecord {
     localId: 0 | 1;
     /** 이 기기가 타이틀에서 고른 값 */
     chose: { character: CharacterId; weapon: number };
+    /** 혼자 하기에서 고른 난이도 */
+    difficulty?: Difficulty;
     transport: string;
     userAgent: string;
     viewport: string;

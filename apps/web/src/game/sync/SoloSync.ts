@@ -6,6 +6,7 @@ import { EMPTY_INPUT, type GameMode, type InputFrame, type SimState } from '../.
 import { LOADOUTS, type WeaponKind } from '../../sim/weapons';
 import type { GameSync, RenderState } from './GameSync';
 import type { SimEventSink } from '../../sim/events';
+import { BOT_SKILL, type BotSkill, type Difficulty } from '../../sim/difficulty';
 
 export class SoloSync implements GameSync {
   readonly kind = 'solo' as const;
@@ -14,12 +15,16 @@ export class SoloSync implements GameSync {
   private readonly bot: BotMemory = createBotMemory();
   private sink: SimEventSink | null = null;
 
-  constructor(local: CharacterId, mode: GameMode, weapon: WeaponKind) {
+  private readonly skill: BotSkill;
+
+  constructor(local: CharacterId, mode: GameMode, weapon: WeaponKind, difficulty: Difficulty = 'normal') {
+    this.skill = BOT_SKILL[difficulty];
     const foe = characterAt(characterIndex(local) + 1);
     this.state = createInitialState([local, foe], {
       mode,
       playerCount: mode === 'coop' ? 1 : 2,
       seed: Date.now(),
+      difficulty,
     });
     setPlayerLoadout(this.state, 0, weapon);
     // 봇은 자기 파티마의 선택지 중 하나를 무작위로 든다
@@ -29,7 +34,7 @@ export class SoloSync implements GameSync {
 
   step(local: InputFrame): void {
     // 1:1 대전에서는 상대를 AI가 조종한다. 협동은 1인 방어라 두 번째 슬롯이 비어 있다.
-    const foe = this.state.mode === 'duel' ? botInput(this.state, 1, this.bot) : EMPTY_INPUT;
+    const foe = this.state.mode === 'duel' ? botInput(this.state, 1, this.bot, this.skill) : EMPTY_INPUT;
     step(this.state, [local, foe], { onEvent: this.sink ?? undefined });
   }
 

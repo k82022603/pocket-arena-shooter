@@ -1,5 +1,7 @@
 import { nextRandom } from './prng';
 import { EMPTY_INPUT, SIM, type InputFrame, type SimState } from './types';
+import { BOT_SKILL, type BotSkill } from './difficulty';
+import { WEAPONS } from './weapons';
 
 // 1인 대전 상대 AI의 기억. 틱마다 botInput이 갱신한다.
 export interface BotMemory {
@@ -10,10 +12,13 @@ export interface BotMemory {
   burstTimer: number;
   bursting: boolean;
   keepDistance: number;
+  /** 상대의 직전 위치. 앞질러 쏠 때 속도를 어림하는 데 쓴다 */
+  foeX: number;
+  foeY: number;
 }
 
 export function createBotMemory(): BotMemory {
-  return { strafeDir: 1, strafeTimer: 0, aimError: 0, aimErrorTarget: 0, burstTimer: 90, bursting: false, keepDistance: 360 };
+  return { strafeDir: 1, strafeTimer: 0, aimError: 0, aimErrorTarget: 0, burstTimer: 90, bursting: false, keepDistance: 360, foeX: NaN, foeY: NaN };
 }
 
 const ENGAGE_RANGE = 640;
@@ -21,7 +26,7 @@ const EDGE_MARGIN = 90;
 const DODGE_RANGE = 220;
 const PICKUP_RANGE = 280;
 
-export function botInput(state: SimState, botId: 0 | 1, mem: BotMemory): InputFrame {
+export function botInput(state: SimState, botId: 0 | 1, mem: BotMemory, skill: BotSkill = BOT_SKILL.normal): InputFrame {
   const me = state.players[botId];
   const foe = state.players[botId === 0 ? 1 : 0];
   if (me.hp <= 0) return EMPTY_INPUT;
@@ -79,24 +84,29 @@ export function botInput(state: SimState, botId: 0 | 1, mem: BotMemory): InputFr
       if (bd > DODGE_RANGE) continue;
       const speed = Math.hypot(b.vx, b.vy) || 1;
       const toward = (bx * b.vx + by * b.vy) / (bd * speed);
-      if (toward > 0.94 && nextRandom(state) < 0.35) {
+      if (toward > 0.94 && nextRandom(state) < skill.dodgeChance) {
         dash = true;
         break;
       }
     }
   }
 
-  // 조준: 탄속에 맞춰 상대 이동을 약간 앞지르고, 천천히 흔들리는 오차를 더한다
-  const baseAngle = Math.atan2(foe.y - me.y, foe.x - me.x);
-  if (Math.abs(mem.aimError - mem.aimErrorTarget) < 0.01) mem.aimErrorTarget = (nextRandom(state) - 0.5) * 0.36;
+  // 조준: 난이도만큼 상대 이동을 앞지르고, 천천히 흔들리는 오차를 더한다
+  const fvx = Number.isNaN(mem.foeX) ? 0 : foe.x - mem.foeX;
+  const fvy = Number.isNaN(mem.foeY) ? 0 : foe.y - mem.foeY;
+  mem.foeX = foe.x;
+  mem.foeY = foe.y;
+  const flightTicks = (dist / WEAPONS[me.weapon].speed) * SIM.tickRate * skill.lead;
+  const baseAngle = Math.atan2(foe.y + fvy * flightTicks - me.y, foe.x + fvx * flightTicks - me.x);
+  if (Math.abs(mem.aimError - mem.aimErrorTarget) < 0.01) mem.aimErrorTarget = (nextRandom(state) - 0.5) * skill.aimError;
   mem.aimError += (mem.aimErrorTarget - mem.aimError) * 0.05;
   const angle = baseAngle + mem.aimError;
 
-  // 점사: 0.5초 쏘고 0.5~1초 쉰다
+  // 점사: 정해진 만큼 쏘고 잠깐 쉰다 (보통은 0.5초 쏘고 0.5~1초 쉼)
   mem.burstTimer -= 1;
   if (mem.burstTimer <= 0) {
     mem.bursting = !mem.bursting;
-    mem.burstTimer = mem.bursting ? 30 : 30 + Math.floor(nextRandom(state) * 30);
+    mem.burstTimer = mem.bursting ? skill.burstTicks : skill.restMin + Math.floor(nextRandom(state) * skill.restSpread);
   }
   const fire = mem.bursting && dist < ENGAGE_RANGE && foe.hp > 0;
 

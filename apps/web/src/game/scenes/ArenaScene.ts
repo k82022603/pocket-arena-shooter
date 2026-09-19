@@ -19,6 +19,7 @@ import { SoloSync } from '../sync/SoloSync';
 import { HostSync } from '../sync/HostSync';
 import { GuestSync } from '../sync/GuestSync';
 import { selectedCharacter, selectedMode } from './TitleScene';
+import { selectedDifficulty } from '../difficulty';
 import { selectedLoadout } from '../loadout';
 import { MatchRecorder, SAMPLE_INTERVAL_TICKS } from '../recorder';
 
@@ -30,6 +31,14 @@ type ArenaData = { mode: 'solo' } | { mode: 'versus'; session: Session };
 const ENEMY_BULLET_COLOR = 0xff7043;
 const PLAYER_BULLET_COLOR = 0xffe066;
 const FLASH_MS = 90;
+
+// 왼쪽 위 HUD: 초상 카드 + HP 바. 맨 윗줄이 나, 그 아래가 상대(또는 짝).
+const HUD_CARD_W = 52;
+const HUD_CARD_H = 62;
+const HUD_CARD_X = 8 + HUD_CARD_W / 2;
+const HUD_BAR_X = HUD_CARD_X + HUD_CARD_W / 2 + 8;
+const HUD_BAR_W = 128;
+const hudRowY = (slot: 0 | 1): number => 8 + HUD_CARD_H / 2 + slot * (HUD_CARD_H + 6);
 
 interface BulletMemo {
   x: number;
@@ -157,7 +166,7 @@ export class ArenaScene extends Phaser.Scene {
       if (new URLSearchParams(location.search).has('debug')) (window as unknown as { __link?: Session }).__link = session;
     } else {
       this.session = undefined;
-      this.sync = new SoloSync(local, mode, weapon);
+      this.sync = new SoloSync(local, mode, weapon, selectedDifficulty(this));
     }
 
     this.world = this.add.container(0, 0);
@@ -168,13 +177,14 @@ export class ArenaScene extends Phaser.Scene {
     // 화면을 가리지 않도록 평소에는 초상 옆 HP 바만 그리고, 진단 정보는 ?debug=1 일 때만 보여준다
     this.hudGfx = this.add.graphics().setDepth(49);
     this.hud = new URLSearchParams(location.search).has('debug')
-      ? this.add.text(60, 108, '', { fontFamily: FONT, fontSize: '13px', color: '#8fa3c8' }).setDepth(50)
+      ? this.add.text(HUD_BAR_X, hudRowY(1) + HUD_CARD_H / 2 + 8, '', { fontFamily: FONT, fontSize: '13px', color: '#8fa3c8' }).setDepth(50)
       : null;
     this.recorder = new MatchRecorder({
       role: this.sync.kind,
       mode,
       localId: this.sync.localId,
       chose: { character: local, weapon },
+      difficulty: this.sync.kind === 'solo' ? selectedDifficulty(this) : undefined,
       transport: this.session ? this.session.kind : 'none',
       userAgent: navigator.userAgent,
       viewport: Math.round(this.scale.width) + 'x' + Math.round(this.scale.height),
@@ -184,7 +194,7 @@ export class ArenaScene extends Phaser.Scene {
 
     // 맨 위 줄이 내 것임을 못 박는다. 2인일 때만 보여준다.
     this.hudMe = this.add
-      .text(192, 34, '나', { fontFamily: FONT, fontSize: '12px', color: '#8fa3c8' })
+      .text(HUD_BAR_X + HUD_BAR_W + 6, hudRowY(0), '나', { fontFamily: FONT, fontSize: '12px', color: '#8fa3c8' })
       .setOrigin(0, 0.5)
       .setDepth(50)
       .setVisible(false);
@@ -855,12 +865,12 @@ export class ArenaScene extends Phaser.Scene {
     const g = this.hudGfx;
     g.clear();
     this.hudMe.setVisible(rs.playerCount === 2);
-    const x = 58;
-    const w = 128;
+    const x = HUD_BAR_X;
+    const w = HUD_BAR_W;
     for (const p of rs.players) {
       if (p.id >= rs.playerCount) continue;
       const character = CHARACTERS[p.character];
-      const y = 34 + this.hudSlot(p.id) * 46;
+      const y = hudRowY(this.hudSlot(p.id));
       const ratio = Math.max(0, p.hp / character.stats.maxHp);
       g.fillStyle(0x05080f, 0.75);
       g.fillRoundedRect(x - 2, y - 9, w + 4, 18, 4);
@@ -886,7 +896,8 @@ export class ArenaScene extends Phaser.Scene {
       if (this.hudPortraitIds[slot] !== wanted) {
         this.hudPortraits[slot]?.destroy();
         this.hudPortraits[slot] = wanted
-          ? addPortraitCard(this, wanted, 32, 34 + slot * 46, 40, 44, CHARACTERS[wanted].color, 2)?.setDepth(50) ?? null
+          ? addPortraitCard(this, wanted, HUD_CARD_X, hudRowY(slot), HUD_CARD_W, HUD_CARD_H, CHARACTERS[wanted].color, 2)?.setDepth(50) ??
+            null
           : null;
         this.hudPortraitIds[slot] = wanted;
       }

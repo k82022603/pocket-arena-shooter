@@ -1,3 +1,4 @@
+import type { Difficulty } from './difficulty';
 import type { CharacterId } from './characters';
 import type { PickupKind, WeaponKind } from './weapons';
 
@@ -117,6 +118,8 @@ export function emptyStats(): PlayerStats {
 export interface SimState {
   mode: GameMode;
   playerCount: 1 | 2;
+  // 혼자 하기 난이도. 둘이 하는 경기는 항상 normal이고 스냅샷에도 싣지 않는다
+  difficulty: Difficulty;
   tick: number;
   // 라운드 시작 후 진행한 틱 수 (tick은 단조 기준값에서 시작하므로 따로 센다)
   elapsed: number;

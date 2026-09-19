@@ -2,6 +2,7 @@ import { CHARACTERS, type CharacterId } from './characters';
 import { activePlayers, createCoopState, stepCoop } from './coop';
 import type { PositionHistory } from './history';
 import type { DamageSource, SimEventSink } from './events';
+import type { Difficulty } from './difficulty';
 import { nextRandom } from './prng';
 import {
   COOP,
@@ -32,6 +33,7 @@ export interface CreateOptions {
   mode: GameMode;
   playerCount: 1 | 2;
   seed: number;
+  difficulty?: Difficulty;
 }
 
 export function createInitialState(
@@ -41,6 +43,7 @@ export function createInitialState(
   return {
     mode: opts.mode,
     playerCount: opts.playerCount,
+    difficulty: opts.difficulty ?? 'normal',
     tick: 0,
     elapsed: 0,
     rngState: opts.seed >>> 0 || 1,

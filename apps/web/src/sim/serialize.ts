@@ -343,6 +343,7 @@ export function decodeSnapshot(buf: Uint8Array): Snapshot | null {
     state: {
       mode,
       playerCount,
+      difficulty: 'normal',
       tick,
       elapsed,
       rngState: 0,

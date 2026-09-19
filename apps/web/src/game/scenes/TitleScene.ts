@@ -6,6 +6,8 @@ import { addPortraitCard } from '../fx/Portraits';
 import { sfx } from '../audio/Sfx';
 import { LOADOUTS, WEAPONS } from '../../sim/weapons';
 import { selectedLoadout, setLoadout } from '../loadout';
+import { selectedDifficulty, setDifficulty } from '../difficulty';
+import { DIFFICULTY_LABEL, DIFFICULTY_ORDER } from '../../sim/difficulty';
 import { clearPendingJoin, pendingJoinCode } from '../../net/pairing';
 import { canInstall, isStandalone, onInstallAvailabilityChange, promptInstall } from '../../pwa';
 import { FONT, makeButton, makeLabel } from '../ui';
@@ -78,7 +80,7 @@ export class TitleScene extends Phaser.Scene {
     this.refreshMode();
 
     const btnY = height * 0.74;
-    const step = 50;
+    const step = 54;
     const pending = pendingJoinCode();
     if (pending) {
       // QR/링크로 들어온 경우: 캐릭터·무기를 고른 뒤 이 방으로 들어간다
@@ -93,18 +95,30 @@ export class TitleScene extends Phaser.Scene {
         this.scene.restart();
       }).setFontSize(16);
     } else {
-      makeButton(this, rx - 118, btnY, '혼자 하기', () => this.go('Arena', { mode: 'solo' })).setFontSize(20);
-      makeButton(this, rx, btnY + step, '방 만들기', () => this.go('Lobby', { role: 'host' })).setFontSize(20);
-      makeButton(this, rx + 118, btnY, '참가하기', () => this.go('Lobby', { role: 'guest' })).setFontSize(20);
+      // 윗줄: 혼자 하기와 그 난이도 / 아랫줄: 둘이 하기
+      const solo = makeButton(this, rx, btnY, '혼자 하기', () => this.go('Arena', { mode: 'solo' })).setFontSize(20);
+      this.buildDifficulty(solo, rx, btnY);
+      makeButton(this, rx - 90, btnY + step, '방 만들기', () => this.go('Lobby', { role: 'host' })).setFontSize(20);
+      makeButton(this, rx + 90, btnY + step, '참가하기', () => this.go('Lobby', { role: 'guest' })).setFontSize(20);
     }
 
-    makeLabel(
+    // 조작 안내는 일러스트 카드와 겹치지 않도록 카드 오른쪽 영역의 맨 아래에 둔다.
+    // 두 줄을 다 넣으면 폰에서 버튼과 부딪히므로 지금 기기에 맞는 한 줄만 보여준다.
+    const touch = window.matchMedia?.('(pointer: coarse)').matches ?? false;
+    const cardRight = this.cardX + this.cardW / 2;
+    const freeW = width - cardRight;
+    // 글자는 화면 높이에 맞춰 키우되, 한 줄에 안 들어가면 들어갈 때까지 줄인다(두 줄이 되면 버튼과 겹친다).
+    const hint = makeLabel(
       this,
-      width / 2,
-      height * 0.97,
-      '터치: 왼쪽 드래그 이동 · 오른쪽 드래그 조준/발사 · 무기 버튼 탭으로 교체   |   PC: WASD 이동 · 마우스 조준 · 클릭 발사 · Shift 대시 · 1~3 무기 교체',
-      11,
-    ).setColor('#6f7fa3');
+      cardRight + freeW / 2,
+      height - 16,
+      touch
+        ? '왼쪽 드래그 이동 · 오른쪽 드래그 조준·발사 · 무기 버튼 교체'
+        : 'WASD 이동 · 마우스 조준 · 클릭 발사 · Shift 대시 · 1~3 무기',
+      Math.round(Math.min(18, Math.max(13, height * 0.036))),
+    ).setColor('#a9b6d6');
+    let size = Number.parseInt(String(hint.style.fontSize), 10);
+    while (hint.width > freeW - 16 && size > 10) hint.setFontSize(--size);
 
     this.muteButton = makeButton(this, width - 44, 30, '', () => this.toggleMute()).setFontSize(18);
     this.refreshMute();
@@ -170,6 +184,39 @@ export class TitleScene extends Phaser.Scene {
     this.registry.set(REGISTRY_CHARACTER, next);
     this.refreshCharacter();
     sfx.ui();
+  }
+
+  // 혼자 하기 버튼 오른쪽에 하·중·상 세 칸을 붙이고, 둘을 한 덩어리로 가운데 맞춘다.
+  // 대전에서는 봇의 솜씨, 방어전에서는 적의 수가 바뀐다 (sim/difficulty.ts).
+  private buildDifficulty(solo: Phaser.GameObjects.Text, rx: number, y: number): void {
+    const gap = 10;
+    const segGap = 4;
+    const segs = DIFFICULTY_ORDER.map((d) =>
+      makeButton(this, 0, y, DIFFICULTY_LABEL[d], () => {
+        setDifficulty(this, d);
+        sfx.ui();
+        paint();
+      })
+        .setFontSize(17)
+        .setPadding(12, 12, 12, 12),
+    );
+    const segW = segs.reduce((a, s) => a + s.displayWidth, 0) + segGap * (segs.length - 1);
+    const total = solo.displayWidth + gap + segW;
+    let x = rx - total / 2;
+    solo.setX(x + solo.displayWidth / 2);
+    x += solo.displayWidth + gap;
+    for (const s of segs) {
+      s.setX(x + s.displayWidth / 2);
+      x += s.displayWidth + segGap;
+    }
+    const paint = (): void => {
+      const current = selectedDifficulty(this);
+      segs.forEach((s, i) => {
+        const on = DIFFICULTY_ORDER[i] === current;
+        s.setBackgroundColor(on ? '#4cc9f0' : '#1f2a44').setColor(on ? '#0b0f1a' : '#ffffff');
+      });
+    };
+    paint();
   }
 
   private toggleMode(): void {

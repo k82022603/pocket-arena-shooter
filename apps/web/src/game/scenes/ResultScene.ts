@@ -93,32 +93,37 @@ export class ResultScene extends Phaser.Scene {
     );
     if (subtitle) makeLabel(this, cx, height * 0.08 + 34, subtitle, 14);
 
-    if (summary) this.renderTable(summary, data.localId, height * 0.37);
+    // 폰 가로(높이 390 안팎)에서는 아래 버튼 줄과 겹치지 않도록 표를 조금 올리고 줄 간격을 줄인다.
+    const compact = height < 480;
+    if (summary) this.renderTable(summary, data.localId, height * (compact ? 0.34 : 0.37), compact ? 21 : 24);
 
     const record = applyResult(outcome, data.localId, online);
     const recordText =
       outcome.mode === 'duel'
         ? `내 전적 · 대전 ${record.duelWins}승 ${record.duelLosses}패`
         : `내 전적 · 방어 성공 ${record.coopClears}회 / 실패 ${record.coopFails}회 · 최고 웨이브 ${record.bestWave}`;
-    makeLabel(this, cx, height * 0.8, recordText, 14).setColor('#8fa3c8');
+    // 아래쪽은 화면 비율이 아니라 바닥에서 잰 거리로 쌓는다. 비율로 두면 낮은 화면에서 서로 겹친다.
+    const btnY = height - 34;
+    makeLabel(this, cx, height - 96, recordText, 14).setColor('#8fa3c8');
 
     // 이상한 일이 있었을 때 화면을 캡처해 설명하는 대신 이 파일 하나를 넘기면 된다.
     if (data.recorder) {
       const rec = data.recorder;
-      makeLabel(this, cx, height * 0.835, rec.summaryLine(), 11).setColor('#5c6b8a');
-      const save = makeButton(this, cx, height * 0.965, '경기 기록 저장', () => {
+      makeLabel(this, cx, height - 80, rec.summaryLine(), 11).setColor('#5c6b8a');
+      const save = makeButton(this, cx + 180, btnY, '경기 기록 저장', () => {
         const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
         downloadRecord(rec.toRecord(), 'arena-' + rec.toRecord().header.role + '-' + stamp + '.json');
         save.setText('저장됨');
         sfx.ui();
-      }).setFontSize(13);
+      })
+        .setFontSize(15)
+        .setPadding(18, 12, 18, 12);
     }
 
-    const btnY = height * 0.9;
-    const status = makeLabel(this, cx, btnY - 28, '', 13).setColor('#8fa3c8');
-    const rematch = makeButton(this, cx - 90, btnY, '다시 하기', () => this.requestRematch(data, rematch, status)).setFontSize(20);
+    const status = makeLabel(this, cx, height - 64, '', 13).setColor('#8fa3c8');
+    const rematch = makeButton(this, cx - 160, btnY, '다시 하기', () => this.requestRematch(data, rematch, status)).setFontSize(20);
     if (!canRematch) rematch.setAlpha(0.4).disableInteractive();
-    makeButton(this, cx + 90, btnY, '타이틀로', () => {
+    makeButton(this, cx, btnY, '타이틀로', () => {
       sfx.ui();
       data.session?.close();
       this.scene.start('Title');
@@ -169,7 +174,7 @@ export class ResultScene extends Phaser.Scene {
     this.scene.start('Arena', { mode: 'versus', session: data.session });
   }
 
-  private renderTable(summary: MatchSummary, localId: 0 | 1, top: number): void {
+  private renderTable(summary: MatchSummary, localId: 0 | 1, top: number, rowH: number): void {
     const { width } = this.scale;
     const cx = width / 2;
     const rows = summary.mode === 'duel' ? DUEL_ROWS : COOP_ROWS;
@@ -177,13 +182,26 @@ export class ResultScene extends Phaser.Scene {
     const cols = players.length;
     const labelX = cx - 150;
     const colX = (i: number) => (cols === 1 ? cx + 60 : cx + 20 + i * 150);
-    const rowH = 24;
+
+    // 초상은 표 양옆에 크게 세운다. 폰 가로 화면은 위아래 여유가 없어 이름 위에 두면 작아질 수밖에 없다.
+    // 첫 열의 파티마는 왼쪽(항목 이름 바깥), 마지막 열은 오른쪽. 혼자면 오른쪽 하나만.
+    const tableTop = top - 14;
+    const tableBottom = top + 34 + (rows.length - 1) * rowH + 12;
+    const midY = (tableTop + tableBottom) / 2;
+    const leftRoom = labelX - 16 - 12;
+    const rightEdge = colX(cols - 1) + 72;
+    const rightRoom = width - rightEdge - 12;
+    const wantH = Math.max(tableBottom - tableTop, Math.min(this.scale.height * 0.4, 260));
+    const cardW = Math.max(48, Math.min(wantH * 0.75, rightRoom, cols === 2 ? leftRoom : rightRoom));
+    const cardH = cardW / 0.75;
 
     for (let i = 0; i < cols; i++) {
       const p = players[i]!;
       const c = CHARACTERS[p.character];
       const mine = i === localId;
-      addPortraitCard(this, p.character, colX(i), top - 44, 48, 56, c.color, 2);
+      const onLeft = cols === 2 && i === 0;
+      const cardX = onLeft ? labelX - 16 - cardW / 2 : rightEdge + cardW / 2;
+      addPortraitCard(this, p.character, cardX, midY, cardW, cardH, c.color, 4);
       this.add
         .text(colX(i), top, `${c.name}${mine ? ' (나)' : ''}`, { fontFamily: FONT, fontSize: '17px', color: mine ? '#ffffff' : '#c9d1e3' })
         .setOrigin(0.5);
