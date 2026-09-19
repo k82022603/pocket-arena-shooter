@@ -3,6 +3,7 @@ import type { Session } from '../../net/connect';
 import { CHARACTERS } from '../../sim/characters';
 import type { MatchSummary, Outcome } from '../../sim/core';
 import { COOP, SIM, type PlayerStats } from '../../sim/types';
+import { encodeRematch, isRematch } from '../../sim/serialize';
 import { sfx } from '../audio/Sfx';
 import { addPortraitCard } from '../fx/Portraits';
 import { applyResult } from '../record';
@@ -49,11 +50,18 @@ function formatTime(ticks: number): string {
 }
 
 export class ResultScene extends Phaser.Scene {
+  private myReady = false;
+  private peerReady = false;
+  private rematchTimer: Phaser.Time.TimerEvent | null = null;
+
   constructor() {
     super('Result');
   }
 
   create(data: ResultData): void {
+    this.myReady = false;
+    this.peerReady = false;
+    this.rematchTimer = null;
     const { width, height } = this.scale;
     const cx = width / 2;
     const { outcome, summary } = data;
@@ -93,16 +101,58 @@ export class ResultScene extends Phaser.Scene {
     makeLabel(this, cx, height * 0.8, recordText, 14).setColor('#8fa3c8');
 
     const btnY = height * 0.9;
-    const rematch = makeButton(this, cx - 90, btnY, '다시 하기', () => {
-      sfx.ui();
-      this.scene.start('Arena', data.session ? { mode: 'versus', session: data.session } : { mode: 'solo' });
-    }).setFontSize(20);
+    const status = makeLabel(this, cx, btnY - 28, '', 13).setColor('#8fa3c8');
+    const rematch = makeButton(this, cx - 90, btnY, '다시 하기', () => this.requestRematch(data, rematch, status)).setFontSize(20);
     if (!canRematch) rematch.setAlpha(0.4).disableInteractive();
     makeButton(this, cx + 90, btnY, '타이틀로', () => {
       sfx.ui();
       data.session?.close();
       this.scene.start('Title');
     }).setFontSize(20);
+
+    const session = data.session;
+    if (!session) return;
+    // 혼자 눌러 빈 아레나에서 기다리지 않도록, 양쪽이 모두 누르면 함께 시작한다.
+    const offMessage = session.onMessage((_channel, bytes) => {
+      if (!isRematch(bytes)) return;
+      this.peerReady = true;
+      if (this.myReady) this.startRematch(data);
+      else status.setText('상대가 재경기를 원합니다 — "다시 하기"를 누르세요').setColor('#ffe066');
+    });
+    const offFailed = session.on('failed', () => {
+      rematch.setAlpha(0.4).disableInteractive();
+      this.rematchTimer?.remove();
+      status.setText('상대와 연결이 끊겼습니다').setColor('#ff8a80');
+    });
+    this.events.once('shutdown', () => {
+      offMessage();
+      offFailed();
+      this.rematchTimer?.remove();
+      this.rematchTimer = null;
+    });
+  }
+
+  private requestRematch(data: ResultData, button: Phaser.GameObjects.Text, status: Phaser.GameObjects.Text): void {
+    sfx.ui();
+    if (!data.session) {
+      this.scene.start('Arena', { mode: 'solo' });
+      return;
+    }
+    if (this.myReady) return;
+    this.myReady = true;
+    button.setAlpha(0.6).disableInteractive();
+    status.setText('상대를 기다리는 중…').setColor('#8fa3c8');
+    // 상대가 아직 결과 화면에 오지 않았을 수 있으므로 준비 신호를 반복해서 보낸다
+    const send = () => data.session?.send('event', encodeRematch());
+    send();
+    this.rematchTimer = this.time.addEvent({ delay: 400, loop: true, callback: send });
+    if (this.peerReady) this.startRematch(data);
+  }
+
+  private startRematch(data: ResultData): void {
+    this.rematchTimer?.remove();
+    this.rematchTimer = null;
+    this.scene.start('Arena', { mode: 'versus', session: data.session });
   }
 
   private renderTable(summary: MatchSummary, localId: 0 | 1, top: number): void {

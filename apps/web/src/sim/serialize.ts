@@ -17,6 +17,16 @@ import type { PickupKind, WeaponKind } from './weapons';
 export const PACKET_INPUT = 0x01;
 export const PACKET_CHARACTER = 0x02;
 export const PACKET_SNAPSHOT = 0x03;
+export const PACKET_REMATCH = 0x04;
+
+// 결과 화면에서 "다시 하기"를 눌렀다는 신호. 양쪽이 준비되면 같이 시작한다.
+export function encodeRematch(): Uint8Array {
+  return Uint8Array.of(PACKET_REMATCH);
+}
+
+export function isRematch(buf: Uint8Array): boolean {
+  return buf.byteLength === 1 && buf[0] === PACKET_REMATCH;
+}
 
 // 입력 패킷은 최신 틱과 그 직전 틱들의 프레임을 중복 실어 손실을 재전송 없이 메운다.
 export const INPUT_REDUNDANCY = 3;

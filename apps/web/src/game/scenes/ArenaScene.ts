@@ -52,7 +52,8 @@ export class ArenaScene extends Phaser.Scene {
   private world!: Phaser.GameObjects.Container;
   private gfx!: Phaser.GameObjects.Graphics;
   private nameLabels!: [Phaser.GameObjects.Text, Phaser.GameObjects.Text];
-  private hud!: Phaser.GameObjects.Text;
+  private hud: Phaser.GameObjects.Text | null = null;
+  private hudGfx!: Phaser.GameObjects.Graphics;
   private banner!: Phaser.GameObjects.Text;
   private waveText!: Phaser.GameObjects.Text;
   private hudPortraits: [Phaser.GameObjects.Container | null, Phaser.GameObjects.Container | null] = [null, null];
@@ -153,7 +154,11 @@ export class ArenaScene extends Phaser.Scene {
     this.world.add(this.gfx);
     this.nameLabels = [this.makeNameLabel(), this.makeNameLabel()];
 
-    this.hud = this.add.text(60, 12, '', { fontFamily: FONT, fontSize: '18px', color: '#ffffff' }).setDepth(50);
+    // 화면을 가리지 않도록 평소에는 초상 옆 HP 바만 그리고, 진단 정보는 ?debug=1 일 때만 보여준다
+    this.hudGfx = this.add.graphics().setDepth(49);
+    this.hud = new URLSearchParams(location.search).has('debug')
+      ? this.add.text(60, 108, '', { fontFamily: FONT, fontSize: '13px', color: '#8fa3c8' }).setDepth(50)
+      : null;
     this.hudPortraits = [null, null];
     this.hudPortraitIds = [null, null];
     this.banner = this.add
@@ -708,6 +713,34 @@ export class ArenaScene extends Phaser.Scene {
     }
   }
 
+  // 초상 오른쪽의 HP 바. 픽업 무기·부스트가 걸려 있으면 바 아래 얇은 띠로 표시한다.
+  private renderHealthBars(rs: RenderState): void {
+    const g = this.hudGfx;
+    g.clear();
+    const x = 58;
+    const w = 128;
+    for (const p of rs.players) {
+      if (p.id >= rs.playerCount) continue;
+      const character = CHARACTERS[p.character];
+      const y = 34 + p.id * 46;
+      const ratio = Math.max(0, p.hp / character.stats.maxHp);
+      g.fillStyle(0x05080f, 0.75);
+      g.fillRoundedRect(x - 2, y - 9, w + 4, 18, 4);
+      g.fillStyle(0x1b2540, 1);
+      g.fillRect(x, y - 6, w, 12);
+      g.fillStyle(p.id === this.sync.localId ? character.color : 0xff6b6b, 1);
+      g.fillRect(x, y - 6, w * ratio, 12);
+      if (p.weaponTicks > 0) {
+        g.fillStyle(WEAPONS[p.weapon].color, 1);
+        g.fillRect(x, y + 7, w * (p.weaponTicks / WEAPONS[p.weapon].durationTicks), 3);
+      }
+      if (p.boostTicks > 0) {
+        g.fillStyle(PICKUP_COLORS[3], 1);
+        g.fillRect(x, y + 11, w * (p.boostTicks / PICKUP.boostTicks), 3);
+      }
+    }
+  }
+
   private renderHudPortraits(rs: RenderState): void {
     for (const p of rs.players) {
       const slot = p.id;
@@ -725,25 +758,16 @@ export class ArenaScene extends Phaser.Scene {
 
   private renderHud(rs: RenderState): void {
     this.renderHudPortraits(rs);
-    const [p0, p1] = rs.players;
-    const hp = (p: PlayerState) => {
-      let text = `${CHARACTERS[p.character].name} ${p.hp}/${CHARACTERS[p.character].stats.maxHp}`;
-      if (p.weaponTicks > 0) {
-        text += ` [${WEAPONS[p.weapon].name} ${Math.ceil(p.weaponTicks / SIM.tickRate)}s`;
-        text += p.baseWeapon !== p.weapon ? ` → ${WEAPONS[p.baseWeapon].name}]` : ']';
-      } else {
-        text += ` [${WEAPONS[p.weapon].name}]`;
-      }
-      if (p.boostTicks > 0) text += ` [부스트 ${Math.ceil(p.boostTicks / SIM.tickRate)}s]`;
-      return text;
-    };
+    this.renderHealthBars(rs);
     const me = rs.players[this.sync.localId];
     this.weaponButton.setText(`무기 ▸ ${WEAPONS[me.baseWeapon].name}`);
-    const players = rs.playerCount === 2 ? `${hp(p0)}   vs   ${hp(p1)}` : hp(p0);
-    const net = this.session
-      ? `\nRTT ${this.session.rtt.toFixed(0)}ms  ${this.session.kind}/${this.sync.kind}  ${this.sync.debugInfo()}`
-      : '';
-    this.hud.setText(`${players}   tick ${rs.tick}${net}`);
+
+    if (this.hud) {
+      const net = this.session
+        ? `RTT ${this.session.rtt.toFixed(0)}ms ${this.session.kind}/${this.sync.kind} ${this.sync.debugInfo()}`
+        : '';
+      this.hud.setText(`tick ${rs.tick} ${net}`);
+    }
 
     if (rs.mode === 'coop' && rs.coop) {
       const c = rs.coop;
