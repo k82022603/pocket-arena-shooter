@@ -671,5 +671,57 @@ check('봇이 가만히 선 상대를 이김', b.players[0].hp === 0 && b.elapse
   check('대전 봇 난이도: 상이 하보다 자주 이긴다', strong > weak + 2, `중 봇 상대 8판 중 하 ${weak}승 / 상 ${strong}승`);
 }
 
+// 접촉 넉백: 적에게 닿으면 적 반대쪽으로 짧게 밀려나 떨어진다. 대시 중에는 피해도 넉백도 없다.
+{
+  const place = (dashing: boolean) => {
+    const st = createInitialState(['est', 'est'], { mode: 'coop', playerCount: 1, seed: 3 });
+    st.coop!.timer = 100_000;
+    st.players[0].x = 400;
+    st.players[0].y = 360;
+    if (dashing) st.players[0].dashTicks = 30;
+    st.coop!.enemies.push({ id: 1, kind: 0, x: 420, y: 360, hp: 30, fireCooldown: 0, contactCooldown: 0 });
+    return st;
+  };
+  const st = place(false);
+  const hp0 = st.players[0].hp;
+  step(st, [EMPTY_INPUT, EMPTY_INPUT]);
+  const pushed = st.players[0].knockX < 0 && st.players[0].hp === hp0 - 6;
+  for (let i = 0; i < 20; i++) step(st, [EMPTY_INPUT, EMPTY_INPUT]);
+  const moved = 400 - st.players[0].x;
+  const settled = st.players[0].knockX === 0 && st.players[0].knockY === 0;
+  check(
+    '적에게 닿으면 반대쪽으로 밀려나고 곧 멈춘다',
+    pushed && moved > 25 && moved < 70 && settled,
+    `피해 ${hp0 - st.players[0].hp}, 밀린 거리 ${moved.toFixed(1)}px`,
+  );
+
+  const dash = place(true);
+  step(dash, [EMPTY_INPUT, EMPTY_INPUT]);
+  check('대시 중에는 접촉 피해도 넉백도 없다', dash.players[0].hp === hp0 && dash.players[0].knockX === 0);
+
+  // 밀려나는 속도는 스냅샷에 실린다. 안 실리면 참가한 쪽 예측이 넉백을 모르고 매번 되돌아간다.
+  const snapKnock = place(false);
+  step(snapKnock, [EMPTY_INPUT, EMPTY_INPUT]);
+  const back = decodeSnapshot(encodeSnapshot(snapKnock, 0))!.state.players[0];
+  check(
+    '넉백 속도가 스냅샷을 왕복한다',
+    Math.abs(back.knockX - snapKnock.players[0].knockX) < 0.01 && back.knockX !== 0,
+    `knockX ${back.knockX.toFixed(1)}`,
+  );
+
+  // 붙잡혀 못 빠져나오는 일이 없어야 한다: 척후병 옆에서 반대로 달리면 1초 안에 떨어진다
+  const run = place(false);
+  const away: InputFrame = { ...EMPTY_INPUT, moveX: -1 };
+  let hits = 0;
+  let last = run.players[0].hp;
+  for (let i = 0; i < 60; i++) {
+    step(run, [away, EMPTY_INPUT]);
+    if (run.players[0].hp < last) hits += 1;
+    last = run.players[0].hp;
+  }
+  const gapAfter = Math.hypot(run.coop!.enemies[0]!.x - run.players[0].x, run.coop!.enemies[0]!.y - run.players[0].y);
+  check('척후병에게서 달아나면 떨어진다 (가장 느린 에스트 기준)', hits <= 1 && gapAfter > 60, `1초간 피격 ${hits}회, 거리 ${gapAfter.toFixed(0)}px`);
+}
+
 console.log(failures === 0 ? '\n모든 검사 통과' : `\n${failures}개 실패`);
 process.exit(failures === 0 ? 0 : 1);

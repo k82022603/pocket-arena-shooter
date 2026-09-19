@@ -75,6 +75,8 @@ function spawnPlayer(id: 0 | 1, character: CharacterId, mode: GameMode): PlayerS
     baseWeapon: 0,
     weaponTicks: 0,
     boostTicks: 0,
+    knockX: 0,
+    knockY: 0,
   };
 }
 
@@ -152,12 +154,31 @@ export function applyPlayerInput(p: PlayerState, input: InputFrame): void {
 
   const boost = p.boostTicks > 0 ? PICKUP.boostMul : 1;
   const speed = SIM.playerSpeed * stats.speedMul * boost * (p.dashTicks > 0 ? SIM.dashSpeedMul : 1);
-  p.x += input.moveX * speed * SIM.dt;
-  p.y += input.moveY * speed * SIM.dt;
+  p.x += (input.moveX * speed + p.knockX) * SIM.dt;
+  p.y += (input.moveY * speed + p.knockY) * SIM.dt;
+  decayKnock(p);
   p.x = clamp(p.x, SIM.playerRadius, SIM.arenaW - SIM.playerRadius);
   p.y = clamp(p.y, SIM.playerRadius, SIM.arenaH - SIM.playerRadius);
 
   if (Math.hypot(input.aimX, input.aimY) > 0) p.aimAngle = Math.atan2(input.aimY, input.aimX);
+}
+
+// 넉백: 순간이동 대신 짧게 미끄러지게 한다. 매 틱 속도를 줄이고, 충분히 작아지면 멈춘다.
+// 게스트 예측도 applyPlayerInput을 거치므로 같은 궤적이 나온다(knockX/Y는 스냅샷에 실린다).
+function decayKnock(p: PlayerState): void {
+  p.knockX *= SIM.knockDecay;
+  p.knockY *= SIM.knockDecay;
+  if (Math.hypot(p.knockX, p.knockY) < 8) {
+    p.knockX = 0;
+    p.knockY = 0;
+  }
+}
+
+/** (nx, ny) 방향으로 speed(px/s)만큼 밀어낸다. 이미 밀려나는 중이면 더 센 쪽을 따른다 */
+export function knockPlayer(p: PlayerState, nx: number, ny: number, speed: number): void {
+  if (Math.hypot(p.knockX, p.knockY) >= speed) return;
+  p.knockX = nx * speed;
+  p.knockY = ny * speed;
 }
 
 export function consumeFire(p: PlayerState, input: InputFrame): boolean {

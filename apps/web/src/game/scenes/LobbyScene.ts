@@ -4,7 +4,9 @@ import { hostSession, joinSession, type Session } from '../../net/connect';
 import { isLocalOnlyHost, joinUrlFor, parseJoinCode } from '../../net/pairing';
 import { cameraAvailable, promptCode, scanQr, toast } from '../../ui/overlay';
 import { sfx } from '../audio/Sfx';
-import { fontPx, makeButton, makeLabel, px } from '../ui';
+import { TYPE, accentOf, applySkinBackground, fontPx, makeButton, makeLabel, px, sizeButton, skin, styleButton } from '../ui';
+import { CHARACTERS } from '../../sim/characters';
+import { selectedCharacter } from './TitleScene';
 
 interface LobbyData {
   role: 'host' | 'guest';
@@ -27,8 +29,9 @@ export class LobbyScene extends Phaser.Scene {
     this.qrKey = null;
     this.busy = false;
 
-    this.status = makeLabel(this, width / 2, height * 0.42, '', 24);
-    makeButton(this, px(this, 70), px(this, 30), '← 뒤로', () => this.leave(), 16);
+    applySkinBackground(this);
+    this.status = makeLabel(this, width / 2, height * 0.42, '', TYPE.heading - 4);
+    sizeButton(makeButton(this, px(this, 56), px(this, 28), '← 뒤로', () => this.leave(), TYPE.body, 'ghost'), 88, 36);
     this.events.once('shutdown', this.cleanup, this);
 
     if (data.role === 'host') void this.runHost();
@@ -62,20 +65,20 @@ export class LobbyScene extends Phaser.Scene {
 
     const rx = width * 0.7;
     const u = (n: number) => px(this, n);
-    this.status.setPosition(rx, height * 0.72).setFontSize(u(18));
-    makeLabel(this, rx, height * 0.2, '방 코드', 18);
+    this.status.setPosition(rx, height * 0.72).setFontSize(u(TYPE.body + 2));
+    makeLabel(this, rx, height * 0.2, '방 코드', TYPE.body).setColor(skin().textDim);
     this.add
       .text(rx, height * 0.33, code, { fontFamily: 'ui-monospace, Menlo, Consolas, monospace', fontSize: fontPx(this, 56), color: '#ffffff' })
       .setOrigin(0.5)
       .setLetterSpacing(u(8));
     const reachable = !new URL(url).hostname.match(/^(localhost|127\.0\.0\.1|\[::1\])$/);
-    makeLabel(this, rx, height * 0.45, 'QR을 찍거나 코드를 입력하면 시작됩니다', 15);
-    makeLabel(this, rx, height * 0.52, reachable ? url : '이 PC에서만 열 수 있는 주소입니다 — npm run play 로 실행하세요', 12).setColor(
+    makeLabel(this, rx, height * 0.45, 'QR을 찍거나 코드를 입력하면 시작됩니다', TYPE.body);
+    makeLabel(this, rx, height * 0.52, reachable ? url : '이 PC에서만 열 수 있는 주소입니다 — npm run play 로 실행하세요', TYPE.caption).setColor(
       reachable ? '#8fa3c8' : '#ff8a80',
     );
     if (!reachable && isLocalOnlyHost()) toast('폰에서 접속하려면 LAN 주소로 열어야 합니다', 3000);
-    makeButton(this, rx - u(80), height * 0.6, '링크 복사', () => void this.copyLink(url), 16);
-    makeButton(this, rx + u(80), height * 0.6, '공유', () => void this.share(url, code), 16);
+    sizeButton(makeButton(this, rx - u(70), height * 0.6, '링크 복사', () => void this.copyLink(url), TYPE.body), 130, 38);
+    sizeButton(makeButton(this, rx + u(70), height * 0.6, '공유', () => void this.share(url, code), TYPE.body), 130, 38);
     this.setStatus('상대를 기다리는 중…');
   }
 
@@ -103,15 +106,17 @@ export class LobbyScene extends Phaser.Scene {
     const { width, height } = this.scale;
     const cx = width / 2;
     this.setStatus('');
-    makeLabel(this, cx, height * 0.22, '참가하기', 28);
+    makeLabel(this, cx, height * 0.22, '참가하기', TYPE.heading);
     const camera = cameraAvailable();
-    const scan = makeButton(this, cx, height * 0.42, 'QR 스캔', () => void this.scan());
+    const accent = accentOf(CHARACTERS[selectedCharacter(this)].color);
+    const scan = sizeButton(makeButton(this, cx, height * 0.42, 'QR 스캔', () => void this.scan(), TYPE.button, 'action'), 220, 46);
+    styleButton(scan, 'action', accent);
     if (!camera) {
       scan.setAlpha(0.4).disableInteractive();
-      makeLabel(this, cx, height * 0.42 + px(this, 36), window.isSecureContext ? '이 기기에서는 카메라를 쓸 수 없습니다' : 'https로 접속해야 카메라를 쓸 수 있습니다', 13);
+      makeLabel(this, cx, height * 0.42 + px(this, 36), window.isSecureContext ? '이 기기에서는 카메라를 쓸 수 없습니다' : 'https로 접속해야 카메라를 쓸 수 있습니다', TYPE.caption);
     }
-    makeButton(this, cx, height * 0.6, '코드 입력', () => void this.enterCode());
-    makeLabel(this, cx, height * 0.8, '호스트 QR을 폰 카메라로 찍어 링크를 열어도 바로 참가됩니다', 14);
+    styleButton(sizeButton(makeButton(this, cx, height * 0.6, '코드 입력', () => void this.enterCode(), TYPE.button, 'action'), 220, 46), 'action', accent);
+    makeLabel(this, cx, height * 0.8, '호스트 QR을 폰 카메라로 찍어 링크를 열어도 바로 참가됩니다', TYPE.caption).setColor(skin().textDim);
   }
 
   private async scan(): Promise<void> {

@@ -45,6 +45,9 @@ export interface PlayerState {
   // 픽업 무기 남은 틱.
   weaponTicks: number;
   boostTicks: number;
+  // 적에게 닿았을 때 밀려나는 속도(px/s). 틱마다 줄어들어 짧게 미끄러진다
+  knockX: number;
+  knockY: number;
 }
 
 export const ENEMY_OWNER = 2;
@@ -145,6 +148,8 @@ export const SIM = {
   bulletRadius: 4,
   bulletTtl: 90,
   dashSpeedMul: 3,
+  // 넉백 감쇠(틱당 곱). 0.8이면 처음 속도의 약 5틱 분량만큼 밀려난다
+  knockDecay: 0.8,
 } as const;
 
 export const COOP = {
@@ -171,13 +176,15 @@ export interface EnemySpec {
   radius: number;
   contactDamage: number;
   contactIntervalTicks: number;
+  /** 닿은 플레이어를 밀어내는 속도(px/s). 붙어서 계속 때리지 못하게 떼어 놓는다 */
+  contactKnock: number;
   fireIntervalTicks: number;
   keepDistance: number;
   color: number;
 }
 
 export const ENEMIES: Record<EnemyKind, EnemySpec> = {
-  0: { name: '척후병', hp: 30, speed: 150, radius: 14, contactDamage: 6, contactIntervalTicks: 45, fireIntervalTicks: 0, keepDistance: 0, color: 0xff5252 },
-  1: { name: '포수', hp: 50, speed: 120, radius: 16, contactDamage: 5, contactIntervalTicks: 30, fireIntervalTicks: 90, keepDistance: 320, color: 0xb388ff },
-  2: { name: '강습병', hp: 200, speed: 70, radius: 26, contactDamage: 20, contactIntervalTicks: 60, fireIntervalTicks: 0, keepDistance: 0, color: 0x8d1f1f },
+  0: { name: '척후병', hp: 30, speed: 150, radius: 14, contactDamage: 6, contactIntervalTicks: 45, contactKnock: 480, fireIntervalTicks: 0, keepDistance: 0, color: 0xff5252 },
+  1: { name: '포수', hp: 50, speed: 120, radius: 16, contactDamage: 5, contactIntervalTicks: 30, contactKnock: 420, fireIntervalTicks: 90, keepDistance: 320, color: 0xb388ff },
+  2: { name: '강습병', hp: 200, speed: 70, radius: 26, contactDamage: 20, contactIntervalTicks: 60, contactKnock: 720, fireIntervalTicks: 0, keepDistance: 0, color: 0x8d1f1f },
 };

@@ -41,6 +41,10 @@ export interface RecordSample {
   hurt1?: Partial<Record<DamageSource, number>>;
   /** 이 구간에 코어가 무엇에 얼마나 깎였는지 */
   coreHurt?: Partial<Record<DamageSource, number>>;
+  /** 이 순간 내 이동 입력. 키를 눌렀는데 안 움직였다는 제보를 확인할 때 쓴다 */
+  mv?: [number, number];
+  /** 입력 방식. kb-nofocus면 키보드로 하는데 포커스가 게임 밖에 있었다 */
+  input?: 'kb' | 'kb-nofocus' | 'touch';
   /** 이 구간의 격파 수 (적 종류별) */
   kills?: Partial<Record<EnemyKind, number>>;
 }

@@ -13,7 +13,7 @@ import { LOOKS, drawFatima } from '../fx/Fatima';
 import { addPortraitCard } from '../fx/Portraits';
 import { sfx } from '../audio/Sfx';
 import type { CharacterId } from '../../sim/characters';
-import { FONT, fontPx, makeButton, px, uiScale } from '../ui';
+import { FONT, TYPE, fontPx, makeButton, px, sizeButton, uiScale } from '../ui';
 import type { GameSync, RenderState } from '../sync/GameSync';
 import { SoloSync } from '../sync/SoloSync';
 import { HostSync } from '../sync/HostSync';
@@ -31,6 +31,10 @@ type ArenaData = { mode: 'solo' } | { mode: 'versus'; session: Session };
 const ENEMY_BULLET_COLOR = 0xff7043;
 const PLAYER_BULLET_COLOR = 0xffe066;
 const FLASH_MS = 90;
+// 플레이어 피격은 더 길게, 깜빡이게 보여 준다. 적에게 닿아 아픈 것이 눈에 들어와야 피한다.
+const HURT_FLASH_MS = 240;
+const HURT_BLINK_MS = 60;
+const HURT_VIGNETTE_MS = 380;
 
 // 왼쪽 위 HUD: 초상 카드 + HP 바. 맨 윗줄이 나, 그 아래가 상대(또는 짝).
 // 값은 폰 가로 기준이고, 화면 크기에 따라 UI 배율(ui.ts)을 곱해 쓴다.
@@ -73,6 +77,10 @@ export class ArenaScene extends Phaser.Scene {
   private waveText!: Phaser.GameObjects.Text;
   private hudMe!: Phaser.GameObjects.Text;
   private slowWarn!: Phaser.GameObjects.Text;
+  private hurtVignette!: Phaser.GameObjects.Graphics;
+  private focusWarn!: Phaser.GameObjects.Text;
+  private hurtAt = -1e9;
+  private lastMove: [number, number] = [0, 0];
   private recorder!: MatchRecorder;
   private slowFrames = 0;
   private slowSince = 0;
@@ -185,6 +193,8 @@ export class ArenaScene extends Phaser.Scene {
     this.hudL = hudLayout(ui);
     const hl = this.hudL;
     this.hudGfx = this.add.graphics().setDepth(49);
+    this.hurtVignette = this.add.graphics().setDepth(48);
+    this.hurtAt = -1e9;
     this.hud = new URLSearchParams(location.search).has('debug')
       ? this.add.text(hl.barX, hl.rowY(1) + hl.cardH / 2 + u(8), '', { fontFamily: FONT, fontSize: fontPx(this, 13), color: '#8fa3c8' }).setDepth(50)
       : null;
@@ -217,6 +227,18 @@ export class ArenaScene extends Phaser.Scene {
       .text(this.scale.width / 2, u(90), '', { fontFamily: FONT, fontSize: fontPx(this, 13), color: '#ff8a80' })
       .setOrigin(0.5, 0)
       .setDepth(50);
+    // 키보드로 하는데 포커스가 주소창·다른 창에 가 있으면 키가 전혀 안 먹는다. 말없이 안 움직이면 버그로 보인다.
+    this.focusWarn = this.add
+      .text(this.scale.width / 2, this.scale.height - u(40), '키보드 입력이 게임에 닿지 않습니다 — 게임 화면을 한 번 클릭하세요', {
+        fontFamily: FONT,
+        fontSize: fontPx(this, TYPE.body),
+        color: '#0b0f1a',
+        backgroundColor: '#ffe066',
+        padding: { x: u(14), y: u(8) },
+      })
+      .setOrigin(0.5)
+      .setDepth(103)
+      .setVisible(false);
     this.waveText = this.add
       .text(this.scale.width / 2, this.scale.height / 2, '', {
         fontFamily: FONT,
@@ -264,7 +286,7 @@ export class ArenaScene extends Phaser.Scene {
       this.swapRequest = next + 1;
     });
 
-    this.exitButton = makeButton(this, this.scale.width - u(60), u(30), '✕', () => this.exit(), 18).setDepth(102);
+    this.exitButton = sizeButton(makeButton(this, this.scale.width - u(60), u(30), '✕', () => this.exit(), TYPE.button), 44, 40).setDepth(102);
 
     this.scale.on('resize', this.layout, this);
     this.layout();
@@ -300,7 +322,9 @@ export class ArenaScene extends Phaser.Scene {
     this.accumulator += Math.min(deltaMs, 100) / 1000;
     while (this.accumulator >= SIM.dt) {
       this.accumulator -= SIM.dt;
-      this.sync.step(this.readLocalInput());
+      const input = this.readLocalInput();
+      this.lastMove = [input.moveX, input.moveY];
+      this.sync.step(input);
       this.sampleRecord();
       const outcome = this.sync.outcome();
       if (outcome !== null) {
@@ -457,7 +481,9 @@ export class ArenaScene extends Phaser.Scene {
       if (!first) {
         const prevHp = this.prevHp[p.id];
         if (p.hp < prevHp) {
-          this.flashUntil.set(`p${p.id}`, now + FLASH_MS);
+          this.flashUntil.set(`p${p.id}`, now + HURT_FLASH_MS);
+          this.popDamage(p.x, p.y, prevHp - p.hp);
+          if (p.id === this.sync.localId) this.hurtAt = now;
           this.fx.burst(p.x, p.y, 0xff5252, 8, 180, 260, 2.5);
           if (p.hp <= 0) {
             this.fx.burst(p.x, p.y, color, 36, 340, 700, 4, 0.94);
@@ -562,7 +588,34 @@ export class ArenaScene extends Phaser.Scene {
 
   private flashing(key: string, now: number): boolean {
     const until = this.flashUntil.get(key);
-    return until !== undefined && until > now;
+    if (until === undefined || until <= now) return false;
+    // 플레이어는 깜빡이고, 적과 코어는 한 번 번쩍인다
+    if (key.startsWith('p')) return Math.floor((until - now) / HURT_BLINK_MS) % 2 === 0;
+    return true;
+  }
+
+  // 맞은 자리에서 피해량이 떠올랐다 사라진다. 경기장 좌표에 붙어 경기장 배율을 따른다.
+  private popDamage(x: number, y: number, amount: number): void {
+    const t = this.add
+      .text(x, y - 26, `-${amount}`, { fontFamily: FONT, fontSize: '20px', color: '#ff6b6b', stroke: '#000000', strokeThickness: 4 })
+      .setOrigin(0.5);
+    this.world.add(t);
+    this.tweens.add({ targets: t, y: y - 60, alpha: 0, duration: 650, ease: 'Cubic.easeOut', onComplete: () => t.destroy() });
+  }
+
+  // 내가 맞으면 화면 가장자리가 붉게 번졌다가 빠진다. 캐릭터가 작은 폰 화면에서도 맞았다는 걸 놓치지 않게.
+  private renderHurtVignette(now: number): void {
+    const g = this.hurtVignette;
+    g.clear();
+    const t = (now - this.hurtAt) / HURT_VIGNETTE_MS;
+    if (t < 0 || t >= 1) return;
+    const { width, height } = this.scale;
+    const band = px(this, 26);
+    for (let i = 0; i < 4; i++) {
+      const inset = (band / 4) * i;
+      g.lineStyle(band / 4, 0xff3b3b, (1 - t) * 0.42 * (1 - i / 4));
+      g.strokeRect(inset + band / 8, inset + band / 8, width - 2 * inset - band / 4, height - 2 * inset - band / 4);
+    }
   }
 
   private render(): void {
@@ -570,6 +623,8 @@ export class ArenaScene extends Phaser.Scene {
     const rs = this.sync.renderState(now);
     this.lastRender = rs;
     this.detectEvents(rs, now);
+    this.renderHurtVignette(now);
+    this.focusWarn.setVisible(this.desktop.active && !this.desktop.hasFocus);
 
     const shake = this.fx.shakeOffset();
     this.world.setPosition(this.baseX + shake.x * this.worldScale, this.baseY + shake.y * this.worldScale);
@@ -862,6 +917,8 @@ export class ArenaScene extends Phaser.Scene {
       wave: rs.coop?.wave,
       core: rs.coop?.coreHp,
       enemies: rs.coop?.enemies.length,
+      mv: [Math.round(this.lastMove[0] * 100) / 100, Math.round(this.lastMove[1] * 100) / 100],
+      input: this.desktop.active ? (this.desktop.hasFocus ? 'kb' : 'kb-nofocus') : 'touch',
     });
   }
 
@@ -949,6 +1006,7 @@ export class ArenaScene extends Phaser.Scene {
     this.world.setPosition(this.baseX, this.baseY);
     this.banner.setX(width / 2);
     this.slowWarn.setX(width / 2);
+    this.focusWarn.setPosition(width / 2, height - px(this, 40));
     // 오른쪽 버튼은 화면 가장자리를 따라간다 (창 크기 변경·화면 회전)
     const u = (n: number) => px(this, n);
     this.dashButton.setPosition(width - u(90), height * 0.35);

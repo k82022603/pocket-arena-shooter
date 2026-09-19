@@ -1,5 +1,5 @@
 import { CHARACTERS } from './characters';
-import { damagePlayer } from './core';
+import { damagePlayer, knockPlayer } from './core';
 import { nextRandom } from './prng';
 import { ENEMY_CONTACT_SOURCE, type SimEventSink } from './events';
 import { SOLO_ENEMY_SCALE, type Difficulty } from './difficulty';
@@ -176,7 +176,11 @@ function stepEnemies(state: SimState, coop: CoopState, onEvent?: SimEventSink): 
       e.contactCooldown = spec.contactIntervalTicks;
       const by = ENEMY_CONTACT_SOURCE[e.kind];
       if (target.player) {
-        if (target.player.dashTicks === 0) damagePlayer(state, target.player, spec.contactDamage, by, onEvent);
+        if (target.player.dashTicks === 0) {
+          damagePlayer(state, target.player, spec.contactDamage, by, onEvent);
+          // 닿으면 밀려난다. 없으면 적이 몸에 붙은 채 따라와 붙잡힌 것처럼 느껴진다
+          if (target.player.hp > 0) knockPlayer(target.player, nx, ny, spec.contactKnock);
+        }
       } else {
         const dealt = Math.min(coop.coreHp, spec.contactDamage);
         coop.coreHp -= dealt;

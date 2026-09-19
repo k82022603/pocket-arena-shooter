@@ -164,7 +164,7 @@ class Reader {
 
 // snapshot: header, player x2, stats x2, bullet xN, pickup xK, (coop) core/wave, enemy xM
 const HEADER_BYTES = 1 + 4 + 4 + 4 + 4 + 1 + 1 + 1 + 1;
-const PLAYER_BYTES = 1 + 4 + 4 + 2 + 4 + 1 + 1 + 1 + 1 + 1 + 1 + 2 + 2;
+const PLAYER_BYTES = 1 + 4 + 4 + 2 + 4 + 1 + 1 + 1 + 1 + 1 + 1 + 2 + 2 + 4 + 4;
 const STATS_FIELDS: (keyof PlayerStats)[] = ['shots', 'hits', 'damageDealt', 'damageTaken', 'kills', 'dashes', 'downs'];
 const STATS_BYTES = STATS_FIELDS.length * 4;
 const BULLET_BYTES = 4 + 1 + 1 + 4 + 4 + 4 + 4 + 4 + 1 + 1;
@@ -215,6 +215,8 @@ export function encodeSnapshot(state: SimState, ackTick: number): Uint8Array {
     w.u8(p.baseWeapon);
     w.u16(p.weaponTicks);
     w.u16(p.boostTicks);
+    w.f32(p.knockX);
+    w.f32(p.knockY);
   }
   for (const s of state.stats) for (const field of STATS_FIELDS) w.u32(s[field]);
   for (const b of bullets) {
@@ -284,6 +286,8 @@ export function decodeSnapshot(buf: Uint8Array): Snapshot | null {
       baseWeapon: r.u8() as WeaponKind,
       weaponTicks: r.u16(),
       boostTicks: r.u16(),
+      knockX: r.f32(),
+      knockY: r.f32(),
     });
   }
   const stats: PlayerStats[] = [];

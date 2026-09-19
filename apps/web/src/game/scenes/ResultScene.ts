@@ -7,7 +7,7 @@ import { encodeRematch, isRematch } from '../../sim/serialize';
 import { sfx } from '../audio/Sfx';
 import { addPortraitCard } from '../fx/Portraits';
 import { applyResult } from '../record';
-import { FONT, fontPx, makeButton, makeLabel, padButton, px, uiScale } from '../ui';
+import { FONT, TYPE, accentOf, applySkinBackground, fontPx, makeButton, makeLabel, px, sizeButton, skin, styleButton, uiScale } from '../ui';
 import { coopResultText } from '../outcomeText';
 import { downloadRecord, type MatchRecorder } from '../recorder';
 
@@ -69,6 +69,8 @@ export class ResultScene extends Phaser.Scene {
     const { width, height } = this.scale;
     const cx = width / 2;
     const u = (n: number) => px(this, n);
+    applySkinBackground(this);
+    const k = skin();
     const { outcome, summary } = data;
     const online = data.session !== undefined;
 
@@ -89,10 +91,10 @@ export class ResultScene extends Phaser.Scene {
     if (data.note) subtitle = subtitle ? `${data.note}  ·  ${subtitle}` : data.note;
     const canRematch = !data.session || data.session.connected;
 
-    makeLabel(this, cx, height * 0.08, title, 40).setColor(
+    makeLabel(this, cx, u(34), title, TYPE.display + 4).setColor(
       outcome.mode === 'duel' ? (outcome.winner !== data.localId ? '#ff8a80' : '#ffe066') : outcome.won ? '#69f0ae' : '#ff8a80',
     );
-    if (subtitle) makeLabel(this, cx, height * 0.08 + u(34), subtitle, 14);
+    if (subtitle) makeLabel(this, cx, u(68), subtitle, TYPE.caption).setColor(k.textDim);
 
     // 폰 가로(높이 390 안팎)에서는 아래 버튼 줄과 겹치지 않도록 표를 조금 올리고 줄 간격을 줄인다.
     const compact = height / uiScale(this) < 480;
@@ -105,29 +107,34 @@ export class ResultScene extends Phaser.Scene {
         : `내 전적 · 방어 성공 ${record.coopClears}회 / 실패 ${record.coopFails}회 · 최고 웨이브 ${record.bestWave}`;
     // 아래쪽은 화면 비율이 아니라 바닥에서 잰 거리로 쌓는다. 비율로 두면 낮은 화면에서 서로 겹친다.
     const btnY = height - u(34);
-    makeLabel(this, cx, height - u(96), recordText, 14).setColor('#8fa3c8');
+    makeLabel(this, cx, height - u(96), recordText, TYPE.caption).setColor(k.textDim);
 
     // 이상한 일이 있었을 때 화면을 캡처해 설명하는 대신 이 파일 하나를 넘기면 된다.
     if (data.recorder) {
       const rec = data.recorder;
-      makeLabel(this, cx, height - u(80), rec.summaryLine(), 11).setColor('#5c6b8a');
-      const save = makeButton(this, cx + u(180), btnY, '경기 기록 저장', () => {
+      makeLabel(this, cx, height - u(80), rec.summaryLine(), TYPE.micro).setColor('#5c6b8a');
+      const save = makeButton(this, cx + u(152), btnY, '경기 기록 저장', () => {
         const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
         downloadRecord(rec.toRecord(), 'arena-' + rec.toRecord().header.role + '-' + stamp + '.json');
         save.setText('저장됨');
         sfx.ui();
-      }, 15);
-      padButton(save, 18, 12);
+      }, TYPE.body, 'ghost');
+      sizeButton(save, 140, 42);
     }
 
-    const status = makeLabel(this, cx, height - u(64), '', 13).setColor('#8fa3c8');
-    const rematch = makeButton(this, cx - u(160), btnY, '다시 하기', () => this.requestRematch(data, rematch, status), 20);
+    const status = makeLabel(this, cx, height - u(64), '', TYPE.caption).setColor(k.textDim);
+    // 다시 하기가 이 화면의 주 행동이다. 강조색은 내 파티마의 색
+    const mine = summary?.players[data.localId]?.character;
+    const rematch = makeButton(this, cx - u(152), btnY, '다시 하기', () => this.requestRematch(data, rematch, status), TYPE.button, 'action');
+    if (mine) styleButton(rematch, 'action', accentOf(CHARACTERS[mine].color));
+    sizeButton(rematch, 140, 42);
     if (!canRematch) rematch.setAlpha(0.4).disableInteractive();
-    makeButton(this, cx, btnY, '타이틀로', () => {
+    const toTitle = makeButton(this, cx, btnY, '타이틀로', () => {
       sfx.ui();
       data.session?.close();
       this.scene.start('Title');
-    }, 20);
+    }, TYPE.button);
+    sizeButton(toTitle, 140, 42);
 
     const session = data.session;
     if (!session) return;
@@ -204,17 +211,17 @@ export class ResultScene extends Phaser.Scene {
       const cardX = onLeft ? labelX - u(16) - cardW / 2 : rightEdge + cardW / 2;
       addPortraitCard(this, p.character, cardX, midY, cardW, cardH, c.color, 4);
       this.add
-        .text(colX(i), top, `${c.name}${mine ? ' (나)' : ''}`, { fontFamily: FONT, fontSize: fontPx(this, 17), color: mine ? '#ffffff' : '#c9d1e3' })
+        .text(colX(i), top, `${c.name}${mine ? ' (나)' : ''}`, { fontFamily: FONT, fontSize: fontPx(this, TYPE.button), color: mine ? '#ffffff' : '#c9d1e3' })
         .setOrigin(0.5);
       this.add.rectangle(colX(i), top + u(16), u(120), 2, c.color, 0.9);
     }
 
     rows.forEach((row, r) => {
       const y = top + u(34) + r * rowH;
-      this.add.text(labelX, y, row.label, { fontFamily: FONT, fontSize: fontPx(this, 15), color: '#8fa3c8' }).setOrigin(0, 0.5);
+      this.add.text(labelX, y, row.label, { fontFamily: FONT, fontSize: fontPx(this, TYPE.body), color: '#8fa3c8' }).setOrigin(0, 0.5);
       for (let i = 0; i < cols; i++) {
         this.add
-          .text(colX(i), y, row.value(players[i]!.stats), { fontFamily: FONT, fontSize: fontPx(this, 16), color: '#e6ecff' })
+          .text(colX(i), y, row.value(players[i]!.stats), { fontFamily: FONT, fontSize: fontPx(this, TYPE.body + 1), color: '#e6ecff' })
           .setOrigin(0.5);
       }
     });
