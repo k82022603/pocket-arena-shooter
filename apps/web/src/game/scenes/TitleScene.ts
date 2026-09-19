@@ -6,7 +6,7 @@ import { addPortraitCard } from '../fx/Portraits';
 import { sfx } from '../audio/Sfx';
 import { LOADOUTS, WEAPONS } from '../../sim/weapons';
 import { selectedLoadout, setLoadout } from '../loadout';
-import { REGISTRY_PENDING_JOIN } from '../../net/pairing';
+import { clearPendingJoin, pendingJoinCode } from '../../net/pairing';
 import { canInstall, isStandalone, onInstallAvailabilityChange, promptInstall } from '../../pwa';
 import { FONT, makeButton, makeLabel } from '../ui';
 
@@ -79,16 +79,16 @@ export class TitleScene extends Phaser.Scene {
 
     const btnY = height * 0.74;
     const step = 50;
-    const pending = this.registry.get(REGISTRY_PENDING_JOIN) as string | undefined;
+    const pending = pendingJoinCode();
     if (pending) {
       // QR/링크로 들어온 경우: 캐릭터·무기를 고른 뒤 이 방으로 들어간다
       makeLabel(this, rx, btnY - 34, `초대받은 방 · 코드 ${pending}`, 15).setColor('#ffe066');
       makeButton(this, rx, btnY + 4, '이 파티마로 참가', () => {
-        this.registry.remove(REGISTRY_PENDING_JOIN);
+        clearPendingJoin();
         this.go('Lobby', { role: 'guest', code: pending });
       }).setFontSize(22);
       makeButton(this, rx, btnY + 4 + step, '취소', () => {
-        this.registry.remove(REGISTRY_PENDING_JOIN);
+        clearPendingJoin();
         sfx.ui();
         this.scene.restart();
       }).setFontSize(16);

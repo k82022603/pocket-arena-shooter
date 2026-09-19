@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { REGISTRY_PENDING_JOIN, consumeJoinCodeFromUrl } from '../../net/pairing';
+import { consumeJoinCodeFromUrl, rememberPendingJoin } from '../../net/pairing';
 import { preloadPortraits } from '../fx/Portraits';
 import { FONT } from '../ui';
 
@@ -18,7 +18,7 @@ export class BootScene extends Phaser.Scene {
   create(): void {
     // QR/링크로 들어와도 캐릭터와 무기를 고르도록 타이틀을 먼저 보여준다
     const code = consumeJoinCodeFromUrl();
-    if (code) this.registry.set(REGISTRY_PENDING_JOIN, code);
+    if (code) rememberPendingJoin(code);
     this.scene.start('Title');
   }
 }
