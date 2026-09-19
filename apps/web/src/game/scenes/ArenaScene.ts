@@ -56,6 +56,7 @@ export class ArenaScene extends Phaser.Scene {
   private hudGfx!: Phaser.GameObjects.Graphics;
   private banner!: Phaser.GameObjects.Text;
   private waveText!: Phaser.GameObjects.Text;
+  private hudMe!: Phaser.GameObjects.Text;
   private hudPortraits: [Phaser.GameObjects.Container | null, Phaser.GameObjects.Container | null] = [null, null];
   private hudPortraitIds: [CharacterId | null, CharacterId | null] = [null, null];
   private reconnectShade!: Phaser.GameObjects.Rectangle;
@@ -159,6 +160,12 @@ export class ArenaScene extends Phaser.Scene {
     this.hud = new URLSearchParams(location.search).has('debug')
       ? this.add.text(60, 108, '', { fontFamily: FONT, fontSize: '13px', color: '#8fa3c8' }).setDepth(50)
       : null;
+    // 맨 위 줄이 내 것임을 못 박는다. 2인일 때만 보여준다.
+    this.hudMe = this.add
+      .text(192, 34, '나', { fontFamily: FONT, fontSize: '12px', color: '#8fa3c8' })
+      .setOrigin(0, 0.5)
+      .setDepth(50)
+      .setVisible(false);
     this.hudPortraits = [null, null];
     this.hudPortraitIds = [null, null];
     this.banner = this.add
@@ -714,15 +721,22 @@ export class ArenaScene extends Phaser.Scene {
   }
 
   // 초상 오른쪽의 HP 바. 픽업 무기·부스트가 걸려 있으면 바 아래 얇은 띠로 표시한다.
+  // HUD는 항상 내 줄을 맨 위에 둔다. 슬롯 번호로 배치하면 방을 만든 쪽과 참가한 쪽에서
+  // 내 바의 위치가 뒤바뀌어, 상대 체력이 줄어드는 것을 내 것으로 읽게 된다.
+  private hudSlot(id: 0 | 1): 0 | 1 {
+    return id === this.sync.localId ? 0 : 1;
+  }
+
   private renderHealthBars(rs: RenderState): void {
     const g = this.hudGfx;
     g.clear();
+    this.hudMe.setVisible(rs.playerCount === 2);
     const x = 58;
     const w = 128;
     for (const p of rs.players) {
       if (p.id >= rs.playerCount) continue;
       const character = CHARACTERS[p.character];
-      const y = 34 + p.id * 46;
+      const y = 34 + this.hudSlot(p.id) * 46;
       const ratio = Math.max(0, p.hp / character.stats.maxHp);
       g.fillStyle(0x05080f, 0.75);
       g.fillRoundedRect(x - 2, y - 9, w + 4, 18, 4);
@@ -743,7 +757,7 @@ export class ArenaScene extends Phaser.Scene {
 
   private renderHudPortraits(rs: RenderState): void {
     for (const p of rs.players) {
-      const slot = p.id;
+      const slot = this.hudSlot(p.id);
       const wanted = p.id < rs.playerCount ? p.character : null;
       if (this.hudPortraitIds[slot] !== wanted) {
         this.hudPortraits[slot]?.destroy();
