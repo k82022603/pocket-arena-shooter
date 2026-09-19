@@ -11,7 +11,11 @@ const SNAPSHOT_INTERVAL_TICKS = 3;
 // 게스트 입력을 이 이상 쌓아두지 않는다 (60Hz 기준 100ms). 넘치면 오래된 것부터 버려 지연을 묶는다.
 const MAX_QUEUED_INPUTS = 6;
 // 게스트 탄환 판정 되감기 상한. 게스트는 RTT/2 + 보간 지연만큼 과거의 호스트를 보고 쏜다.
+// 대전(200ms): 이보다 길면 표적인 사람이 "엄폐한 뒤에 맞았다"고 느낀다.
+// 협동(400ms): 표적이 AI 적이라 그런 불만이 없으므로 더 길게 되감아 게스트의 명중률을 지킨다.
+// 400ms를 넘겨도 되지만 위치 히스토리가 64틱(약 1초)이므로 그 안에서 여유를 둔다.
 const MAX_LAG_TICKS = 12;
+const MAX_LAG_TICKS_COOP = 24;
 
 interface QueuedInput {
   tick: number;
@@ -83,7 +87,7 @@ export class HostSync implements GameSync {
       this.ackTick = next.tick;
     }
     this.lagTicks = Math.min(
-      MAX_LAG_TICKS,
+      this.state.mode === 'coop' ? MAX_LAG_TICKS_COOP : MAX_LAG_TICKS,
       Math.round((this.transport.rtt / 2 / 1000) * SIM.tickRate) + INTERP_DELAY_TICKS,
     );
     step(this.state, [local, this.lastGuestInput], {

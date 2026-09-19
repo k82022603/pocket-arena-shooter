@@ -3,6 +3,7 @@ import { createInitialState, setPlayerLoadout, step } from '../apps/web/src/sim/
 import { botInput, createBotMemory } from '../apps/web/src/sim/bot';
 import { EMPTY_INPUT, type InputFrame } from '../apps/web/src/sim/types';
 import { decodeCharacter, decodeInput, decodeSnapshot, encodeCharacter, encodeInput, encodeSnapshot } from '../apps/web/src/sim/serialize';
+import { PositionHistory } from '../apps/web/src/sim/history';
 import { GuestSync } from '../apps/web/src/game/sync/GuestSync';
 import type { SyncLink } from '../apps/web/src/game/sync/GameSync';
 
@@ -88,6 +89,54 @@ const b = createInitialState(['lachesis', 'clotho'], { mode: 'duel', playerCount
 const mem = createBotMemory();
 while (b.elapsed < 1800 && b.players[0].hp > 0) step(b, [EMPTY_INPUT, botInput(b, 1, mem)]);
 check('봇이 가만히 선 상대를 이김', b.players[0].hp === 0 && b.elapsed > 180, `${(b.elapsed / 60).toFixed(1)}s, bot hp ${b.players[1].hp}`);
+
+// 적 대상 되감기 판정: 게스트가 본 시점의 적 위치로 판정한다
+{
+  // 척후병 한 기만 두고 웨이브 스폰을 붙잡아 둔 뒤, 적이 지나간 자리에 정지탄을 놓는다.
+  // aimBack: 몇 틱 전의 자리에 탄을 놓을지, lagTicks: 판정을 몇 틱 되감을지 (둘을 따로 준다)
+  const shoot = (aimBack: number, lagTicks: number): { hit: boolean; moved: number } => {
+    const c = createInitialState(['lachesis', 'clotho'], { mode: 'coop', playerCount: 2, seed: 7 });
+    const hist = new PositionHistory();
+    const coop = c.coop!;
+    coop.phase = 0;
+    coop.timer = 100_000;
+    c.players[0].x = 900;
+    c.players[0].y = 360;
+    c.players[1].x = 900;
+    c.players[1].y = 360;
+    coop.enemies.push({ id: 7, kind: 0, x: 300, y: 360, hp: 30, fireCooldown: 0, contactCooldown: 0 });
+
+    // step 직후의 위치가 "다음 틱의 판정이 보는 위치"다
+    const seen = new Map<number, { x: number; y: number }>();
+    for (let i = 0; i < 20; i++) {
+      step(c, [EMPTY_INPUT, EMPTY_INPUT], { history: hist });
+      const e = coop.enemies[0];
+      if (e) seen.set(c.tick, { x: e.x, y: e.y });
+    }
+
+    const judgeTick = c.tick + 1;
+    const past = seen.get(judgeTick - aimBack - 1)!;
+    const e = coop.enemies[0]!;
+    const moved = Math.hypot(e.x - past.x, e.y - past.y);
+    const hpBefore = e.hp;
+    c.bullets.push({
+      id: 1, owner: 1, kind: 0, spawnTick: c.tick, lagTicks,
+      x: past.x, y: past.y, vx: 0, vy: 0, damage: 10, ttl: 60, hits: [],
+    });
+    step(c, [EMPTY_INPUT, EMPTY_INPUT], { history: hist });
+    return { hit: (coop.enemies[0]?.hp ?? 0) === hpBefore - 10, moved };
+  };
+
+  const rewound = shoot(10, 10);
+  const live = shoot(10, 0);
+  check(
+    '적 대상 되감기: 지나간 자리에 쏜 탄이 명중',
+    rewound.hit,
+    '적이 ' + rewound.moved.toFixed(1) + 'px 이동 (판정 반경 18px)',
+  );
+  check('되감기 없이는 같은 탄이 빗나감', !live.hit, '같은 자리, 이동 ' + live.moved.toFixed(1) + 'px');
+}
+
 
 // 보정 스무딩: 권위 위치가 예측과 어긋나도 화면은 이어지고, 지수 감쇠로 권위에 수렴한다
 {

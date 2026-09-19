@@ -105,6 +105,7 @@ export function step(state: SimState, inputs: readonly [InputFrame, InputFrame],
     }
   }
   opts.history?.record(state.tick, state.players);
+  if (state.coop) opts.history?.recordEnemies(state.tick, state.coop.enemies);
   stepBullets(state, opts.history);
   stepPickups(state);
   if (state.mode === 'coop') stepCoop(state);
@@ -216,7 +217,11 @@ function stepBullets(state: SimState, history?: PositionHistory): void {
   for (const b of state.bullets) {
     if (!advanceBullet(b)) continue;
     const consumed =
-      b.owner === ENEMY_OWNER ? enemyBulletHit(state, b) : state.mode === 'coop' ? coopBulletHit(state, b) : duelBulletHit(state, b, history);
+      b.owner === ENEMY_OWNER
+        ? enemyBulletHit(state, b)
+        : state.mode === 'coop'
+          ? coopBulletHit(state, b, history)
+          : duelBulletHit(state, b, history);
     if (consumed) continue;
     alive.push(b);
   }
@@ -245,12 +250,15 @@ function duelBulletHit(state: SimState, b: BulletState, history?: PositionHistor
   return false;
 }
 
-function coopBulletHit(state: SimState, b: BulletState): boolean {
+function coopBulletHit(state: SimState, b: BulletState, history?: PositionHistory): boolean {
   const coop = state.coop;
   if (!coop) return false;
   const pierce = WEAPONS[b.kind].pierce;
   for (const e of coop.enemies) {
-    if (e.hp <= 0 || b.hits.includes(e.id) || !bulletHits(b, e.x, e.y, ENEMIES[e.kind].radius)) continue;
+    if (e.hp <= 0 || b.hits.includes(e.id)) continue;
+    // 게스트는 보간 지연 + RTT/2 만큼 과거의 적을 보고 쏜다. 쏜 사람이 본 시점으로 되감아 판정한다.
+    const pose = b.lagTicks > 0 ? history?.lookupEnemy(e.id, state.tick - b.lagTicks) : null;
+    if (!bulletHits(b, pose?.x ?? e.x, pose?.y ?? e.y, ENEMIES[e.kind].radius)) continue;
     const dealt = Math.min(e.hp, b.damage);
     e.hp -= dealt;
     const shooter = state.stats[b.owner as 0 | 1];
