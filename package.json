@@ -14,6 +14,7 @@
     "icons": "node scripts/make-icons.mjs",
     "check:sim": "tsx scripts/sim-check.ts",
     "check:balance": "tsx scripts/coop-balance.ts",
+    "check:docs": "node scripts/check-docs.mjs",
     "typecheck": "npm run typecheck --workspaces --if-present"
   }
 }
