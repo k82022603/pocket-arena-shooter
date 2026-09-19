@@ -9,6 +9,7 @@ import { addPortraitCard } from '../fx/Portraits';
 import { applyResult } from '../record';
 import { FONT, makeButton, makeLabel } from '../ui';
 import { coopResultText } from '../outcomeText';
+import { downloadRecord, type MatchRecorder } from '../recorder';
 
 interface ResultData {
   outcome: Outcome;
@@ -17,6 +18,8 @@ interface ResultData {
   session?: Session;
   // 연결 문제로 끝난 경우의 안내 문구
   note?: string;
+  // 이 경기의 진단 기록. 파일로 내보내 원인을 따질 때 쓴다.
+  recorder?: MatchRecorder;
 }
 
 interface StatRow {
@@ -98,6 +101,18 @@ export class ResultScene extends Phaser.Scene {
         ? `내 전적 · 대전 ${record.duelWins}승 ${record.duelLosses}패`
         : `내 전적 · 방어 성공 ${record.coopClears}회 / 실패 ${record.coopFails}회 · 최고 웨이브 ${record.bestWave}`;
     makeLabel(this, cx, height * 0.8, recordText, 14).setColor('#8fa3c8');
+
+    // 이상한 일이 있었을 때 화면을 캡처해 설명하는 대신 이 파일 하나를 넘기면 된다.
+    if (data.recorder) {
+      const rec = data.recorder;
+      makeLabel(this, cx, height * 0.835, rec.summaryLine(), 11).setColor('#5c6b8a');
+      const save = makeButton(this, cx, height * 0.965, '경기 기록 저장', () => {
+        const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+        downloadRecord(rec.toRecord(), 'arena-' + rec.toRecord().header.role + '-' + stamp + '.json');
+        save.setText('저장됨');
+        sfx.ui();
+      }).setFontSize(13);
+    }
 
     const btnY = height * 0.9;
     const status = makeLabel(this, cx, btnY - 28, '', 13).setColor('#8fa3c8');

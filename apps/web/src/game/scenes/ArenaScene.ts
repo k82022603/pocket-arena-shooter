@@ -20,6 +20,7 @@ import { HostSync } from '../sync/HostSync';
 import { GuestSync } from '../sync/GuestSync';
 import { selectedCharacter, selectedMode } from './TitleScene';
 import { selectedLoadout } from '../loadout';
+import { MatchRecorder, SAMPLE_INTERVAL_TICKS } from '../recorder';
 
 type ArenaData = { mode: 'solo' } | { mode: 'versus'; session: Session };
 
@@ -58,8 +59,10 @@ export class ArenaScene extends Phaser.Scene {
   private waveText!: Phaser.GameObjects.Text;
   private hudMe!: Phaser.GameObjects.Text;
   private slowWarn!: Phaser.GameObjects.Text;
+  private recorder!: MatchRecorder;
   private slowFrames = 0;
   private slowSince = 0;
+  private recordTick = 0;
   private hudPortraits: [Phaser.GameObjects.Container | null, Phaser.GameObjects.Container | null] = [null, null];
   private hudPortraitIds: [CharacterId | null, CharacterId | null] = [null, null];
   private reconnectShade!: Phaser.GameObjects.Rectangle;
@@ -163,6 +166,17 @@ export class ArenaScene extends Phaser.Scene {
     this.hud = new URLSearchParams(location.search).has('debug')
       ? this.add.text(60, 108, '', { fontFamily: FONT, fontSize: '13px', color: '#8fa3c8' }).setDepth(50)
       : null;
+    this.recorder = new MatchRecorder({
+      role: this.sync.kind,
+      mode,
+      localId: this.sync.localId,
+      chose: { character: local, weapon },
+      transport: this.session ? this.session.kind : 'none',
+      userAgent: navigator.userAgent,
+      viewport: Math.round(this.scale.width) + 'x' + Math.round(this.scale.height),
+    });
+    (window as unknown as { __record?: MatchRecorder }).__record = this.recorder;
+
     // 맨 위 줄이 내 것임을 못 박는다. 2인일 때만 보여준다.
     this.hudMe = this.add
       .text(192, 34, '나', { fontFamily: FONT, fontSize: '12px', color: '#8fa3c8' })
@@ -257,6 +271,7 @@ export class ArenaScene extends Phaser.Scene {
     while (this.accumulator >= SIM.dt) {
       this.accumulator -= SIM.dt;
       this.sync.step(this.readLocalInput());
+      this.sampleRecord();
       const outcome = this.sync.outcome();
       if (outcome !== null) {
         this.finish(outcome);
@@ -270,12 +285,14 @@ export class ArenaScene extends Phaser.Scene {
   private finish(outcome: Outcome, note?: string): void {
     if (this.ended) return;
     this.ended = true;
+    this.recorder.event(this.recordTick, 'end', note ?? JSON.stringify(outcome));
     this.scene.start('Result', {
       outcome,
       summary: this.sync.summary(),
       localId: this.sync.localId,
       session: this.session,
       note,
+      recorder: this.recorder,
     });
   }
 
@@ -758,6 +775,33 @@ export class ArenaScene extends Phaser.Scene {
         ? '방을 만든 기기가 따라오지 못해 경기가 느립니다 · 그 기기에서 다른 창을 앞으로 두지 마세요'
         : '이 기기가 초당 60틱을 못 돌려 경기가 느립니다 · 다른 창을 앞으로 두지 마세요',
     );
+  }
+
+  // 0.5초마다 진단값을 기록해 둔다. 경기가 끝난 뒤 파일로 내보내 원인을 따질 때 쓴다.
+  private sampleRecord(): void {
+    this.recordTick += 1;
+    if (this.recordTick % SAMPLE_INTERVAL_TICKS !== 0) return;
+    const rs = this.sync.renderState(performance.now());
+    const info = this.sync.debugInfo();
+    const num = (key: string): number | undefined => {
+      const m = new RegExp(key + ' (-?[\d.]+)').exec(info);
+      return m ? Number(m[1]) : undefined;
+    };
+    this.recorder.sample({
+      t: this.recordTick,
+      rtt: this.session?.rtt ?? 0,
+      hostRate: this.sync.kind === 'guest' ? (this.sync as GuestSync).hostTickRate : undefined,
+      pend: num('pending'),
+      q: num('queue'),
+      drop: num('drop'),
+      smooth: num('smooth'),
+      snapped: num('snapped'),
+      hp: [rs.players[0].hp, rs.players[1].hp],
+      ch: [rs.players[0].character, rs.players[1].character],
+      wave: rs.coop?.wave,
+      core: rs.coop?.coreHp,
+      enemies: rs.coop?.enemies.length,
+    });
   }
 
   private hudSlot(id: 0 | 1): 0 | 1 {

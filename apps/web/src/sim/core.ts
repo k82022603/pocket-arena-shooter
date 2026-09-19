@@ -98,8 +98,10 @@ export function step(state: SimState, inputs: readonly [InputFrame, InputFrame],
     applyPlayerInput(p, inputs[p.id]);
     if (p.dashTicks === stats.dashTicks && p.dashCooldown === stats.dashCooldownTicks) state.stats[p.id].dashes += 1;
     if (consumeFire(p, inputs[p.id])) {
-      state.stats[p.id].shots += 1;
       const bullets = makeBullets(p, state.nextBulletId, inputTicks[p.id], lag[p.id]);
+      // 명중은 탄알 단위로 세므로 발사도 탄알 단위로 센다. 방아쇠 횟수로 세면
+      // 산탄 무기에서 명중이 발사보다 많아져 명중률이 100%를 넘는다.
+      state.stats[p.id].shots += bullets.length;
       state.nextBulletId += bullets.length;
       state.bullets.push(...bullets);
     }

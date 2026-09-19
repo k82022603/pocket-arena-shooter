@@ -6,6 +6,7 @@ import { decodeCharacter, decodeInput, decodeSnapshot, encodeCharacter, encodeIn
 import { PositionHistory } from '../apps/web/src/sim/history';
 import { CHARACTERS } from '../apps/web/src/sim/characters';
 import { coopResultText } from '../apps/web/src/game/outcomeText';
+import { MatchRecorder, SAMPLE_INTERVAL_TICKS } from '../apps/web/src/game/recorder';
 import { SessionLink } from '../apps/web/src/net/session';
 import { HostSync } from '../apps/web/src/game/sync/HostSync';
 import type { SyncLink } from '../apps/web/src/game/sync/GameSync';
@@ -348,6 +349,61 @@ check('봇이 가만히 선 상대를 이김', b.players[0].hp === 0 && b.elapse
     '게스트가 계속 쏘면 적이 사라진다',
     shot.enemyGone,
     shot.enemyGone ? '적 격파됨' : '남은 HP ' + shot.enemyHp,
+  );
+}
+
+
+// 명중률은 100%를 넘을 수 없다 (산탄은 발사도 탄알 단위로 세야 한다)
+{
+  const acc = createInitialState(['clotho', 'est'], { mode: 'duel', playerCount: 2, seed: 4 });
+  setPlayerLoadout(acc, 0, 5); // 스캐터 건: 한 번에 4발
+  acc.players[1].x = acc.players[0].x + 120;
+  acc.players[1].y = acc.players[0].y;
+  acc.players[1].hp = 100_000;
+  const aim: InputFrame = { ...EMPTY_INPUT, aimX: 1, aimY: 0, fire: true };
+  for (let i = 0; i < 600; i++) step(acc, [aim, EMPTY_INPUT]);
+  const st = acc.stats[0];
+  check(
+    '명중률이 100%를 넘지 않는다',
+    st.shots > 0 && st.hits <= st.shots,
+    '발사 ' + st.shots + ' 명중 ' + st.hits + ' (' + ((st.hits / st.shots) * 100).toFixed(0) + '%)',
+  );
+}
+
+
+// 경기 기록은 파싱 가능한 JSON이어야 하고, 넘쳐도 초반 구간을 남겨야 한다
+{
+  const rec = new MatchRecorder({
+    role: 'guest',
+    mode: 'coop',
+    localId: 1,
+    chose: { character: 'est', weapon: 0 },
+    transport: 'webrtc',
+    userAgent: 'test',
+    viewport: '1280x720',
+  });
+  for (let i = 1; i <= 800; i++) {
+    rec.sample({
+      t: i * SAMPLE_INTERVAL_TICKS,
+      rtt: 40,
+      hostRate: 60,
+      hp: [100, 130],
+      ch: ['atropos', 'est'],
+    });
+  }
+  const parsed = JSON.parse(rec.toJSON()) as ReturnType<MatchRecorder['toRecord']>;
+  const first = parsed.samples[0]!;
+  const last = parsed.samples[parsed.samples.length - 1]!;
+  check(
+    '경기 기록이 JSON으로 나오고 초반과 최신 구간을 남긴다',
+    parsed.version === 1 &&
+      parsed.header.chose.character === 'est' &&
+      parsed.samples.length <= 600 &&
+      first.t === SAMPLE_INTERVAL_TICKS &&
+      last.t === 800 * SAMPLE_INTERVAL_TICKS &&
+      parsed.dropped > 0 &&
+      first.ch[1] === 'est',
+    '표본 ' + parsed.samples.length + '개, 버린 ' + parsed.dropped + '개, 처음 t=' + first.t + ' 마지막 t=' + last.t,
   );
 }
 
